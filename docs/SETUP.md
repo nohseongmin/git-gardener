@@ -14,7 +14,7 @@ PowerShell에서 순서대로 확인하고, 없는 것만 설치한다.
 
 Visual Studio는 **필요 없다.** UI를 코드로 구성하므로 `dotnet` CLI만으로 빌드된다.
 
-### ⚠️ claude CLI 로그인 (현재 막혀 있는 지점)
+### claude CLI 로그인
 
 `claude --version`이 떠도 그것만으로는 부족하다. **CLI 자체가 로그인되어 있어야** 헤드리스 세션이 돈다. 확인:
 
@@ -22,15 +22,27 @@ Visual Studio는 **필요 없다.** UI를 코드로 구성하므로 `dotnet` CLI
 claude -p "reply with OK only" --output-format json
 ```
 
-`is_error: true` 와 함께 이 문장이 나오면 로그인이 안 된 것이다:
+`is_error: false`에 `result: "OK"`면 통과다. 아니고 아래 문장이 나오면 로그인이 안 된 것이다:
 
 ```
 Your account does not have access to Claude Code. Please run /login.
 ```
 
-이 PC가 지금 이 상태다. env를 전부 걷어내고 `node cli.js`로 직접 실행해도 동일하게 재현되므로, GrassKeeper 쪽 문제가 아니라 **CLI 인증 상태의 문제**다. 대화형으로 `claude`를 띄워 `/login`을 마치면 풀린다. 로그인 전에는 앱이 돌아도 claude 단계에서 매번 실패하고, 로그에 위 문장이 그대로 찍힌다.
+대화형으로 `claude`를 띄워 `/login`을 마치면 풀린다. 로그인 전에는 앱이 돌아도 claude 단계에서 매번 실패하고, 로그에 위 문장이 그대로 찍힌다.
 
-CLI 버전도 확인해두면 좋다. 이 PC는 `2.0.46`으로 랩탑(`2.0.64`)보다 낮다 — `npm i -g @anthropic-ai/claude-code`로 올린다.
+### claude 설치 형태가 바뀐다
+
+**PATH에 있는 `claude`는 실행 파일이 아니라 심(shim)이다.** 그리고 그 심이 가리키는 곳이 배포마다 바뀐다. 실제로 이 PC에서 관측된 것만 세 가지다.
+
+| 배포 | 실제 실행 파일 |
+|---|---|
+| 요즘 npm | `%APPDATA%\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe` |
+| 예전 npm | 같은 경로의 `cli.js` (node로 실행) |
+| 네이티브 설치 | `%USERPROFILE%\.local\bin\claude.exe` (PATH에 없을 수 있음) |
+
+Runner는 이 순서로 찾는다. 그래도 못 찾으면 `config.json`의 `claudePath`에 직접 지정한다.
+
+> 오래된 네이티브 설치본이 `~/.local/bin`에 남아 있을 수 있다. 이 PC에도 `2.0.42`짜리가 남아 있는데 npm 쪽은 `2.1.233`이다. 그래서 npm 패키지를 먼저 본다.
 
 ### gh 인증
 
@@ -159,7 +171,13 @@ dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:Publish
 
 **데스크탑 (구현한 곳)**
 
-- 환경: .NET 9 SDK 9.0.304, gh 2.97.0, git 2.48.1, claude 2.0.46
-- `src/GrassKeeper` 전체 구현 + `dotnet publish` 단일 exe(113MB) 검증
-- 실행 검증: 트레이 기동 → 레포 37개 자동 로드 → UI 정상 렌더까지 확인
-- 미검증: **claude 단계 전체.** 위 로그인 문제로 아직 못 돌려봤다. 따라서 Dry-run(첫 실행 3번)이 여전히 진짜 첫 관문이다.
+- 환경: .NET 9 SDK 9.0.304, gh 2.97.0, git 2.48.1, claude 2.1.233
+- `src/GrassKeeper` 전체 구현 + `dotnet publish` 단일 exe 검증
+- 실행 검증: 트레이 기동 → 레포 37개 자동 로드 → UI 정상 렌더
+- gh 인증 + `gh auth setup-git` 완료 (헤드리스 push 통과 확인)
+- claude CLI 로그인 완료
+- **Dry-run 파이프라인 전체 통과** — `daily-tangle` 대상으로 규칙 수신 → 동기화 → claude(49초) → 응답 파싱 → 템플릿 채움까지 돌았고, 이슈도 PR도 만들지 않는 것까지 확인했다.
+
+**아직 안 해본 것**
+
+실제 PR을 올리는 경로(`지금 1회 실행`). Dry-run까지는 검증했으니 다음은 이거다.

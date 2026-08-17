@@ -108,6 +108,10 @@ sealed partial class Runner(Config cfg)
     [GeneratedRegex(@"^[a-z]+/[a-z0-9]([a-z0-9._-]*[a-z0-9])?$")]
     private static partial Regex BranchFormat { get; }
 
+    /// 템플릿에 있는 빈 이슈 참조 줄. 예: "> - #"
+    [GeneratedRegex(@"^\s*(>\s*)?-\s*#\s*$")]
+    private static partial Regex EmptyIssueRef { get; }
+
     /// 제목, 본문. 트레이 풍선으로 띄운다.
     public event Action<string, string>? Notify;
 
@@ -221,7 +225,7 @@ sealed partial class Runner(Config cfg)
                 브랜치: {pr.Branch}
                 이슈  : {(issue is not null ? $"#{issue.Number} (기존)" : $"새로 생성 예정 — {pr.IssueTitle}")}
 
-                {pr.Body}
+                {LinkIssue(pr.Body, issue?.Number)}
 
                 {stat.Stdout}
                 {diff.Stdout}
@@ -245,7 +249,7 @@ sealed partial class Runner(Config cfg)
         await GitAsync(dir, ["commit", "-m", pr.Title], ct);
         await GitAsync(dir, ["push", "-u", "origin", branch], ct);
 
-        var body = issue is null ? pr.Body : $"{pr.Body}\n\nCloses #{issue.Number}";
+        var body = LinkIssue(pr.Body, issue?.Number);
         return await CreatePullRequestAsync(repo, dir, baseBranch, branch, pr.Title, body, ct);
     }
 
@@ -593,6 +597,24 @@ sealed partial class Runner(Config cfg)
         if (issueBody.Length == 0) issueBody = body;
 
         return (title, branch, issueTitle, issueBody, body);
+    }
+
+    /// <summary>
+    /// 템플릿의 빈 이슈 참조 줄("> - #")을 실제 번호로 채운다.
+    /// 그 줄이 없으면 본문 끝에 붙이고, 걸 이슈가 없으면 빈 줄째로 지운다.
+    /// </summary>
+    static string LinkIssue(string body, int? number)
+    {
+        var lines = body.Split('\n');
+        var slot = Array.FindIndex(lines, EmptyIssueRef.IsMatch);
+
+        if (number is null)
+            return slot < 0 ? body : string.Join('\n', lines.Where((_, i) => i != slot)).Trim();
+
+        if (slot < 0) return $"{body}\n\nCloses #{number}";
+
+        lines[slot] = $"> - Closes #{number}";
+        return string.Join('\n', lines).Trim();
     }
 
     static string FirstLine(string text)

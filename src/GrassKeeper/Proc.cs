@@ -97,9 +97,11 @@ static class Proc
     }
 
     /// <summary>
-    /// claude를 어떻게 띄울지 정한다.
-    /// npm 전역 설치본은 claude.cmd / claude.ps1 심만 남기는데, .cmd를 cmd.exe로 태우면
-    /// 주입할 RULES.md의 `|`·`%`·`"` 가 셸에 먹혀버린다. 그래서 node로 cli.js를 직접 실행한다.
+    /// claude를 어떻게 띄울지 정한다. 설치 방식마다 실행 파일 자리가 달라 순서대로 훑는다.
+    ///
+    /// npm 전역 설치는 PATH에 claude.cmd / claude.ps1 심만 남긴다. CreateProcess는 PATHEXT를
+    /// 적용하지 않아 심을 찾지 못하고, cmd.exe로 우회하면 주입할 RULES.md의 `|`·`%`·`"` 가
+    /// 셸에 먹혀버린다. 그래서 심을 거치지 않고 실제 실행 파일을 직접 찾아 띄운다.
     /// </summary>
     public static Launcher ResolveClaude(string configuredPath)
     {
@@ -110,16 +112,26 @@ static class Proc
             return new Launcher(configuredPath, []);
         }
 
-        if (Find("claude", ".exe") is { } native) return new Launcher(native, []);
+        if (Find("claude", ".exe") is { } onPath) return new Launcher(onPath, []);
 
-        var shim = Find("claude", ".cmd", ".ps1");
-        var node = Find("node", ".exe");
-        if (shim is not null && node is not null)
+        if (Find("claude", ".cmd", ".ps1") is { } shim)
         {
-            var cli = Path.Combine(
-                Path.GetDirectoryName(shim)!, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
-            if (File.Exists(cli)) return new Launcher(node, [cli]);
+            var package = Path.Combine(
+                Path.GetDirectoryName(shim)!, "node_modules", "@anthropic-ai", "claude-code");
+
+            // 요즘 배포판은 패키지 안에 네이티브 바이너리를 담고 있다.
+            var packaged = Path.Combine(package, "bin", "claude.exe");
+            if (File.Exists(packaged)) return new Launcher(packaged, []);
+
+            // 예전 배포판은 node로 돌리는 스크립트였다.
+            var cli = Path.Combine(package, "cli.js");
+            if (File.Exists(cli) && Find("node", ".exe") is { } node) return new Launcher(node, [cli]);
         }
+
+        // 네이티브 설치본. PATH에 없는 경우가 있어 기본 위치를 직접 본다.
+        var installed = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin", "claude.exe");
+        if (File.Exists(installed)) return new Launcher(installed, []);
 
         throw new FileNotFoundException(
             "claude CLI를 찾지 못했습니다. `npm i -g @anthropic-ai/claude-code`로 설치하거나 config.json의 claudePath를 지정하세요.");

@@ -35,7 +35,19 @@ src/GrassKeeper/
 
 **인코딩은 UTF-8로 고정한다.** 같은 개발자의 이전 프로젝트([GUIForGeminiCli](https://github.com/nohseongmin/GUIForGeminiCli))에서 `chcp 949`로 한글 깨짐을 다뤄야 했는데, `git`/`gh`/`claude`는 모두 UTF-8로 출력하므로 코드페이지를 따라가지 말고 `StandardOutputEncoding = Encoding.UTF8`로 못박는다.
 
-**claude는 `node`로 띄운다.** `git`·`gh`는 `.exe`지만 npm 전역 설치된 claude는 `claude.cmd` / `claude.ps1` 심만 남는다. `CreateProcess`는 PATHEXT를 적용하지 않고 `.exe`만 붙여보므로 `claude`는 "파일 없음"으로 실패한다. 그렇다고 `cmd.exe /c`로 우회하면 주입할 `RULES.md`의 마크다운 표 `|`, `%`, `"` 가 셸에 먹혀 프롬프트가 깨진다. 그래서 심이 있는 디렉토리에서 `node_modules\@anthropic-ai\claude-code\cli.js`를 찾아 **`node.exe`로 직접 실행한다.** `ArgumentList`가 이스케이프를 처리하므로 17KB짜리 시스템 프롬프트도 무손상으로 넘어간다(검증 완료). 네이티브 설치본(`claude.exe`)이 PATH에 있으면 그쪽을 우선 쓰고, `config.json`의 `claudePath`로 직접 지정할 수도 있다.
+**claude는 심을 거치지 않고 실제 실행 파일을 찾아 띄운다.** `git`·`gh`는 `.exe`지만 npm 전역 설치된 claude는 `claude.cmd` / `claude.ps1` 심만 PATH에 남긴다. `CreateProcess`는 PATHEXT를 적용하지 않고 `.exe`만 붙여보므로 `claude`는 "파일 없음"으로 실패한다. 그렇다고 `cmd.exe /c`로 우회하면 주입할 `RULES.md`의 마크다운 표 `|`, `%`, `"` 가 셸에 먹혀 프롬프트가 깨진다.
+
+그래서 `Proc.ResolveClaude`가 순서대로 훑는다:
+
+1. `config.json`의 `claudePath` (지정했다면)
+2. PATH의 `claude.exe`
+3. 심 옆 패키지의 `bin\claude.exe` — 요즘 npm 배포
+4. 같은 패키지의 `cli.js` + `node.exe` — 예전 npm 배포
+5. `%USERPROFILE%\.local\bin\claude.exe` — 네이티브 설치본
+
+**설치 형태는 실제로 바뀐다.** 구현 중에 이 PC의 npm 패키지가 `cli.js`에서 `bin\claude.exe`로 갈아탔고, 3번이 없었으면 그 순간부터 앱이 죽었다. 오래된 네이티브 설치본이 `~/.local/bin`에 남아 있는 경우도 있어서(2.0.42 vs npm 2.1.233) npm 쪽을 먼저 본다.
+
+`ArgumentList`가 이스케이프를 처리하므로 17KB짜리 시스템 프롬프트도 무손상으로 넘어간다(검증 완료).
 
 호출할 외부 명령:
 

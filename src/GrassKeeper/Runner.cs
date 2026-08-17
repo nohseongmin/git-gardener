@@ -141,11 +141,11 @@ sealed partial class Runner(Config cfg)
             .Take(cfg.ReposPerDay)
             .ToList();
 
+        // 0건을 정상 종료로 처리하면 그날이 "완료"로 찍혀 다음 날까지 안 돈다.
+        // 부팅 직후 목록 로드가 실패한 날이 통째로 비는 걸 막으려고 실패로 올린다.
         if (targets.Count == 0)
-        {
-            Log.Write("대상 레포가 없습니다. 목록에서 체크한 뒤 다시 실행하세요.");
-            return 0;
-        }
+            throw new InvalidOperationException(
+                $"처리할 대상 레포가 없습니다. 설정에 {cfg.EnabledRepos.Count}개가 선택되어 있고 계정에서 {repos.Count}개를 읽었습니다.");
 
         var rules = await LoadRulesAsync(ct);
         var created = 0;

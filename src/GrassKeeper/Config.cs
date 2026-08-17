@@ -104,6 +104,8 @@ sealed class Config
     /// 비워두면 PATH에서 자동 탐지한다. 네이티브 설치본을 쓸 때만 지정.
     public string ClaudePath { get; set; } = "";
 
+    /// scheduleTime에서 계산한다. 파일에 나가면 고쳐도 안 먹히는 항목이 보여 헷갈린다.
+    [JsonIgnore]
     public TimeOnly Schedule => TimeOnly.Parse(ScheduleTime);
 
     public string ResolveRulesRepo() =>

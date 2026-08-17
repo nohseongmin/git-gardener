@@ -189,6 +189,8 @@ sealed class MainForm : Form
                     : !repo.IsArchived && !repo.IsFork;
                 _repos.Items.Add(repo, enabled);
             }
+            // 예약 실행은 설정 파일만 보고 돈다. 창을 한 번도 안 열어도 대상이 남아 있게 여기서 저장한다.
+            SaveSettings();
             Log.Write($"{_cfg.GithubUser} 레포 {repos.Count}개 로드, {_repos.CheckedItems.Count}개 선택됨");
         }
         catch (OperationCanceledException)

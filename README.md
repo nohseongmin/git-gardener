@@ -14,6 +14,7 @@
 - **main은 건드리지 않는다.** 기본 브랜치에 직접 커밋하는 경로가 코드에 아예 없다. 항상 `auto/improve-*` 브랜치.
 - **작업 사본에서만 돈다.** 로컬에서 직접 개발 중인 레포 폴더는 절대 건드리지 않고, `%LOCALAPPDATA%\GrassKeeper\repos\` 아래 별도 사본에서만 작업한다.
 - **셸을 주지 않는다.** 자동 세션에는 파일 편집 도구만 허용하고 Bash는 차단한다. git/PR 조작은 전부 앱이 한다.
+- **그 레포의 양식을 따른다.** PR 본문 형식을 앱이 정하지 않고, 대상 레포의 `pull_request_template.md`를 읽어 그대로 채운다.
 
 ## 파이프라인
 
@@ -22,18 +23,32 @@
    ↓
 대상 레포 선택 (가장 오래 안 건드린 것부터)
    ↓
+열린 이슈 선택  ── 없으면 ──→ 스스로 고칠 것을 찾는다
+   ↓
 작업 사본 동기화  git clone / fetch + reset --hard
    ↓
-브랜치 생성  auto/improve-yyyyMMdd-HHmm
-   ↓
-Claude 헤드리스 실행  ← 코딩 규칙 + ponytail 룰셋 주입, 편집 도구만 허용
+Claude 헤드리스 실행  ← 코딩 규칙 + ponytail + 그 레포의 PR 템플릿 주입, 편집 도구만 허용
    ↓
 변경 있나?  ── 없음 ──→ 브랜치 삭제, 스킵 (PR 만들지 않음)
    ↓ 있음
-커밋 → push → gh pr create
+(이슈가 없었다면 여기서 이슈 생성)
+   ↓
+브랜치 확정  fix/empty-input-null-check/#12
+   ↓
+커밋 → push → gh pr create (Closes #12)
    ↓
 트레이 알림 + PR 링크
 ```
+
+## 이슈에서 출발한다
+
+사람이 올린 PR은 이슈에서 시작한다. 자동 PR도 그렇게 만든다.
+
+- **내가 이슈를 만들면** GrassKeeper가 그걸 읽고 고쳐서 PR을 건다.
+- **이슈가 없으면** 스스로 고칠 것을 찾고, 이슈를 만든 뒤 PR을 건다.
+- 이미 열린 PR이 물고 있는 이슈는 건너뛴다. 한 이슈에 PR이 쌓이지 않는다.
+
+`이슈 있을 때만` 모드로 두면 내가 시킨 것만 처리한다.
 
 ## 코딩 규칙
 
@@ -61,4 +76,10 @@ dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:Publish
 
 ## 상태
 
-**설계 완료 / 구현 전.** 설계 문서는 [docs/PLAN.md](docs/PLAN.md), 개발 환경 세팅은 [docs/SETUP.md](docs/SETUP.md) 참고.
+**Dry-run 통과 / 실제 PR 검증 전.**
+
+파이프라인 전체가 한 번 돌았다. 규칙 수신 → 작업 사본 동기화 → claude 실행 → 응답 파싱 → PR 본문 작성까지 확인했고, Dry-run이 이슈도 PR도 만들지 않는 것까지 봤다. 실제로 PR을 올리는 경로는 아직 안 돌려봤다.
+
+첫 실행은 반드시 **Dry-run**부터. 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 PR을 올린다.
+
+설계 문서는 [docs/PLAN.md](docs/PLAN.md), 개발 환경 세팅은 [docs/SETUP.md](docs/SETUP.md) 참고.

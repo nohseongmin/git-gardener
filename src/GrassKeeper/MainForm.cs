@@ -28,6 +28,13 @@ sealed class MainForm : Form
 
     static readonly string[] Models = ["sonnet", "opus", "haiku"];
 
+    static readonly (IssueMode Mode, string Label)[] IssueModes =
+    [
+        (IssueMode.Prefer, "이슈 우선 (없으면 생성)"),
+        (IssueMode.Only, "이슈 있을 때만"),
+        (IssueMode.None, "이슈 없이"),
+    ];
+
     readonly Config _cfg;
     readonly CancellationTokenSource _cts = new();
     readonly DateTime _startedAt = DateTime.Now;
@@ -47,6 +54,7 @@ sealed class MainForm : Form
     readonly NumericUpDown _perDay = new() { Minimum = 1, Maximum = 20, Width = 55 };
     readonly ComboBox _type = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     readonly ComboBox _model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
+    readonly ComboBox _issueMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     readonly Button _refresh = new() { Text = "레포 새로고침", AutoSize = true };
     readonly Button _run = new() { Text = "지금 1회 실행", AutoSize = true };
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
@@ -68,7 +76,8 @@ sealed class MainForm : Form
 
         Text = "GrassKeeper";
         Icon = SystemIcons.Application;
-        MinimumSize = new Size(880, 560);
+        // 설정 한 줄이 접히지 않을 만큼은 확보한다.
+        MinimumSize = new Size(1010, 560);
         StartPosition = FormStartPosition.CenterScreen;
 
         BuildUi();
@@ -96,6 +105,7 @@ sealed class MainForm : Form
     {
         _type.Items.AddRange(ImprovementTypes.Select(t => (object)t.Label).ToArray());
         _model.Items.AddRange(Models);
+        _issueMode.Items.AddRange(IssueModes.Select(m => (object)m.Label).ToArray());
         _repos.DisplayMember = nameof(GhRepo.Display);
 
         _refresh.Click += (_, _) => RefreshRepos();
@@ -109,6 +119,7 @@ sealed class MainForm : Form
             Caption("하루 레포 수"), _perDay,
             Caption("개선 유형"), _type,
             Caption("모델"), _model,
+            Caption("이슈"), _issueMode,
         ]);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
@@ -145,6 +156,7 @@ sealed class MainForm : Form
         _perDay.Value = Math.Min(_cfg.ReposPerDay, _perDay.Maximum);
         _type.SelectedIndex = Math.Max(0, Array.FindIndex(ImprovementTypes, t => t.Key == _cfg.ImprovementType));
         _model.SelectedIndex = Math.Max(0, Array.IndexOf(Models, _cfg.Model));
+        _issueMode.SelectedIndex = Math.Max(0, Array.FindIndex(IssueModes, m => m.Mode == _cfg.IssueMode));
         UpdateStartupButton();
     }
 
@@ -156,6 +168,7 @@ sealed class MainForm : Form
         _cfg.ReposPerDay = (int)_perDay.Value;
         _cfg.ImprovementType = ImprovementTypes[_type.SelectedIndex].Key;
         _cfg.Model = Models[_model.SelectedIndex];
+        _cfg.IssueMode = IssueModes[_issueMode.SelectedIndex].Mode;
         _cfg.RunAtStartup = IsRegisteredAtStartup();
         _cfg.Save();
     }

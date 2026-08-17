@@ -23,8 +23,20 @@ sealed class GhRepo
     public string Display => IsArchived ? $"{Name}  (archived)" : IsFork ? $"{Name}  (fork)" : Name;
 }
 
+sealed class GhIssue
+{
+    public int Number { get; set; }
+    public string Title { get; set; } = "";
+    public string Body { get; set; } = "";
+}
+
+sealed class GhPrRef
+{
+    public string HeadRefName { get; set; } = "";
+}
+
 /// <summary>
-/// 파이프라인 본체. 레포 1개당 동기화 → 브랜치 → claude → 변경 검사 → 커밋 → push → PR.
+/// 파이프라인 본체. 레포 1개당 이슈 선택 → 동기화 → 브랜치 → claude → 변경 검사 → 커밋 → push → PR.
 /// 실패해도 브랜치는 남긴다(원인 추적용). 변경이 없으면 브랜치를 지우고 PR을 만들지 않는다.
 /// </summary>
 sealed partial class Runner(Config cfg)
@@ -38,13 +50,35 @@ sealed partial class Runner(Config cfg)
     /// claude 응답에서 PR 정보를 떼어낼 표식.
     const string TitleMarker = "TITLE:";
     const string BranchMarker = "BRANCH:";
+    const string IssueMarker = "ISSUE:";
     const string BodyMarker = "BODY:";
 
     const string FallbackTitle = "Chore: 저장소 정리";
-    const string FallbackBranchType = "chore";
 
     /// 브랜치 이름이 겹칠 때 붙일 접미사의 최대 시도 횟수.
     const int MaxBranchSuffix = 20;
+
+    /// 대상 레포에 PR 템플릿이 없을 때 쓸 기본 양식.
+    const string DefaultPrTemplate = """
+        ## 📌 Summary
+
+        > - #
+
+        ## 📚 Tasks
+
+        -
+
+        ## 👀 To Reviewer
+        """;
+
+    /// gh가 PR 템플릿을 찾는 위치. 위에서부터 먼저 있는 것을 쓴다.
+    static readonly string[] PrTemplatePaths =
+    [
+        ".github/pull_request_template.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "docs/pull_request_template.md",
+        "pull_request_template.md",
+    ];
 
     static readonly TimeSpan GitTimeout = TimeSpan.FromMinutes(10);
     static readonly TimeSpan GhTimeout = TimeSpan.FromMinutes(3);
@@ -143,6 +177,14 @@ sealed partial class Runner(Config cfg)
             ?? throw new InvalidOperationException("기본 브랜치를 알 수 없습니다. 빈 레포일 수 있습니다.");
         var dir = Path.Combine(Paths.ReposDir, repo.Name);
 
+        var issue = cfg.IssueMode == IssueMode.None ? null : await FindIssueAsync(repo, ct);
+        if (issue is null && cfg.IssueMode == IssueMode.Only)
+        {
+            Log.Write($"[{repo.Name}] 처리할 열린 이슈가 없어 건너뜁니다.");
+            return null;
+        }
+        if (issue is not null) Log.Write($"[{repo.Name}] 이슈 #{issue.Number} — {issue.Title}");
+
         // 편집을 하려면 브랜치가 먼저 필요한데, 브랜치 이름은 무엇을 고쳤는지 알아야 정해진다.
         // 그래서 임시 이름으로 만들고 커밋 직전에 실제 이름으로 바꾼다.
         var branch = $"wip/{Guid.NewGuid():N}"[..16];
@@ -151,8 +193,10 @@ sealed partial class Runner(Config cfg)
         await SyncAsync(repo, dir, baseBranch, ct);
         await GitAsync(dir, ["checkout", "-b", branch], ct);
 
+        var template = await PrTemplateAsync(dir, ct);
+
         Log.Write($"[{repo.Name}] claude 실행 (최대 {ClaudeTimeout.TotalMinutes:0}분)");
-        var summary = await ImproveAsync(dir, rules, ct);
+        var summary = await ImproveAsync(dir, rules, template, issue, ct);
 
         var status = await GitAsync(dir, ["status", "--porcelain"], ct);
         if (status.Stdout.Trim().Length == 0)
@@ -165,22 +209,114 @@ sealed partial class Runner(Config cfg)
 
         await GitAsync(dir, ["add", "-A"], ct);
 
+        var pr = ParsePr(summary);
+
         if (dryRun)
         {
             var stat = await GitAsync(dir, ["diff", "--cached", "--stat"], ct);
             var diff = await GitAsync(dir, ["diff", "--cached"], ct);
-            Log.Write($"[{repo.Name}] DRY-RUN — PR을 만들지 않습니다.\n{summary}\n\n{stat.Stdout}\n{diff.Stdout}");
+            Log.Write($"""
+                [{repo.Name}] DRY-RUN — 이슈도 PR도 만들지 않습니다.
+                제목  : {pr.Title}
+                브랜치: {pr.Branch}
+                이슈  : {(issue is not null ? $"#{issue.Number} (기존)" : $"새로 생성 예정 — {pr.IssueTitle}")}
+
+                {pr.Body}
+
+                {stat.Stdout}
+                {diff.Stdout}
+                """);
             return null;
         }
 
-        var pr = ParsePr(summary);
-        branch = await UniqueBranchAsync(dir, pr.Branch, ct);
+        // 이슈가 없으면 여기서 만든다. 무엇을 고쳤는지 알아야 이슈를 제대로 쓸 수 있어서 뒤로 미뤘다.
+        if (issue is null && cfg.IssueMode == IssueMode.Prefer)
+        {
+            var number = await CreateIssueAsync(repo, pr.IssueTitle, pr.IssueBody, ct);
+            issue = new GhIssue { Number = number, Title = pr.IssueTitle };
+            Log.Write($"[{repo.Name}] 이슈 #{number} 생성 — {pr.IssueTitle}");
+        }
+
+        var named = issue is null ? pr.Branch : $"{pr.Branch}/#{issue.Number}";
+        branch = await UniqueBranchAsync(dir, named, ct);
         await GitAsync(dir, ["branch", "-m", branch], ct);
         Log.Write($"[{repo.Name}] {branch} — {pr.Title}");
 
         await GitAsync(dir, ["commit", "-m", pr.Title], ct);
         await GitAsync(dir, ["push", "-u", "origin", branch], ct);
-        return await CreatePullRequestAsync(repo, dir, baseBranch, branch, pr.Title, pr.Body, ct);
+
+        var body = issue is null ? pr.Body : $"{pr.Body}\n\nCloses #{issue.Number}";
+        return await CreatePullRequestAsync(repo, dir, baseBranch, branch, pr.Title, body, ct);
+    }
+
+    /// <summary>
+    /// 손대도 될 열린 이슈 하나를 고른다. 오래된 것부터.
+    /// 이미 열린 PR이 물고 있는 이슈는 건너뛴다 — 같은 이슈로 매일 PR을 쌓지 않기 위해서다.
+    /// </summary>
+    async Task<GhIssue?> FindIssueAsync(GhRepo repo, CancellationToken ct)
+    {
+        List<string> args = ["issue", "list", "--repo", repo.NameWithOwner,
+            "--state", "open", "--json", "number,title,body"];
+        if (cfg.IssueLabel.Length > 0) args.AddRange(["--label", cfg.IssueLabel]);
+
+        var listed = await Proc.RunAsync("gh", args, Paths.Roaming, GhTimeout, ct);
+        if (!listed.Ok) throw new InvalidOperationException($"gh issue list 실패: {listed.Message}");
+
+        var issues = JsonSerializer.Deserialize<List<GhIssue>>(listed.Stdout, JsonOpts) ?? [];
+        if (issues.Count == 0) return null;
+
+        var openPrs = await Proc.RunAsync("gh",
+            ["pr", "list", "--repo", repo.NameWithOwner, "--state", "open", "--json", "headRefName"],
+            Paths.Roaming, GhTimeout, ct);
+        if (!openPrs.Ok) throw new InvalidOperationException($"gh pr list 실패: {openPrs.Message}");
+
+        var taken = (JsonSerializer.Deserialize<List<GhPrRef>>(openPrs.Stdout, JsonOpts) ?? [])
+            .Select(p => p.HeadRefName)
+            .ToList();
+
+        return issues
+            .OrderBy(i => i.Number)
+            .FirstOrDefault(i => !taken.Any(b => b.EndsWith($"/#{i.Number}", StringComparison.Ordinal)));
+    }
+
+    static async Task<int> CreateIssueAsync(GhRepo repo, string title, string body, CancellationToken ct)
+    {
+        var bodyFile = Path.Combine(Path.GetTempPath(), $"grasskeeper-issue-{Guid.NewGuid():N}.md");
+        await File.WriteAllTextAsync(bodyFile, body, ct);
+        try
+        {
+            var created = await Proc.RunAsync("gh",
+                ["issue", "create", "--repo", repo.NameWithOwner, "--title", title, "--body-file", bodyFile],
+                Paths.Roaming, GhTimeout, ct);
+            if (!created.Ok) throw new InvalidOperationException($"gh issue create 실패: {created.Message}");
+
+            // 출력은 이슈 URL이다. 끝의 번호만 떼어 쓴다.
+            var tail = created.Stdout.Trim().Split('/')[^1];
+            return int.TryParse(tail, out var number)
+                ? number
+                : throw new InvalidOperationException($"이슈 번호를 읽지 못했습니다: {created.Stdout.Trim()}");
+        }
+        finally
+        {
+            File.Delete(bodyFile);
+        }
+    }
+
+    /// <summary>
+    /// 대상 레포의 PR 템플릿을 그대로 쓴다. 레포마다 팀 양식이 다르니 형식을 앱이 정하지 않는다.
+    /// 이미 동기화해둔 작업 사본에서 읽으므로 API를 더 부르지 않는다.
+    /// </summary>
+    static async Task<string> PrTemplateAsync(string dir, CancellationToken ct)
+    {
+        foreach (var path in PrTemplatePaths)
+        {
+            var file = Path.Combine(dir, path);
+            if (!File.Exists(file)) continue;
+
+            var text = (await File.ReadAllTextAsync(file, ct)).Trim();
+            if (text.Length > 0) return text;
+        }
+        return DefaultPrTemplate;
     }
 
     /// 같은 이름이 원격에 이미 있으면 push가 실패한다. 비어 있는 이름을 찾아 돌려준다.
@@ -217,12 +353,13 @@ sealed partial class Runner(Config cfg)
         await GitAsync(dir, ["clean", "-fd"], ct);
     }
 
-    async Task<string> ImproveAsync(string dir, string rules, CancellationToken ct)
+    async Task<string> ImproveAsync(
+        string dir, string rules, string template, GhIssue? issue, CancellationToken ct)
     {
         var launcher = Proc.ResolveClaude(cfg.ClaudePath);
         List<string> args = [
             .. launcher.Prefix,
-            "-p", Prompt(),
+            "-p", Prompt(template, issue),
             "--output-format", "json",
             "--permission-mode", "acceptEdits",
             "--allowedTools", AllowedTools,
@@ -330,8 +467,8 @@ sealed partial class Runner(Config cfg)
     }
 
     /// 규칙(RULES.md + ponytail)은 시스템 프롬프트로 이미 주입되므로 여기엔 범위만 담는다.
-    string Prompt() => $"""
-        이 저장소를 딱 한 가지만 개선하라.
+    string Prompt(string template, GhIssue? issue) => $"""
+        {Task(issue)}
 
         범위
         - 개선은 정확히 1건. 여러 파일에 걸친 대공사는 금지한다.
@@ -346,35 +483,43 @@ sealed partial class Runner(Config cfg)
 
         고칠 만한 것을 못 찾았으면 아무 파일도 수정하지 말고 그 이유를 한 줄로 답하고 끝내라.
 
-        고쳤다면 마지막에 아래 형식을 그대로 출력하라. 표식 세 줄의 철자를 바꾸지 마라.
+        고쳤다면 마지막에 아래 형식을 그대로 출력하라. 표식 네 줄의 철자를 바꾸지 마라.
 
         TITLE: <Feat|Fix|Docs|Refactor|Test|Chore> 중 하나 + ": " + 한국어 한 줄 요약(80자 이내)
         BRANCH: 위 타입의 소문자 + "/" + 영문 소문자 kebab-case 단어 2~4개
+        ISSUE: 고친 문제를 이슈 제목처럼 한국어 한 줄로. 해결책이 아니라 문제를 쓴다
+        <ISSUE 줄 아래에는 그 문제를 설명하는 짧은 이슈 본문을 쓴다. 어떤 상태였고 왜 문제인지>
         BODY:
-        ## 📌 Summary
+        <아래 템플릿을 채운 PR 본문>
 
-        무엇을 왜 고쳤는지 한두 문단. 배경(어떤 상태였는지)부터 쓰고, 그래서 무엇을 했는지로 잇는다.
+        BODY에 쓸 템플릿은 이 저장소의 것이다. 섹션 제목과 순서를 그대로 유지하고 내용만 채워라.
+        HTML 주석(<!-- -->)은 작성 안내이므로 읽고 지운다. 체크박스는 사실인 것만 켠다.
 
-        ## 📚 Tasks
-
-        - 변경한 것을 항목으로. 파일 나열이 아니라 한 일을 쓴다.
-
-        ## 👀 To Reviewer
-
-        판단이 갈릴 만한 지점, 일부러 안 건드린 것, 리뷰어가 봐줬으면 하는 부분.
+        ----- 템플릿 시작 -----
+        {template}
+        ----- 템플릿 끝 -----
 
         작성 규칙
-        - 존댓말 평문으로 쓴다. 굵은 글씨와 이모지를 본문에 뿌리지 마라(섹션 제목의 이모지는 그대로 둔다).
+        - 존댓말 평문으로 쓴다. 굵은 글씨와 이모지를 본문에 뿌리지 마라(템플릿의 이모지는 그대로 둔다).
         - 표를 만들지 마라. 문단과 목록으로 쓴다.
-        - 없는 내용을 채우지 마라. 쓸 게 없는 섹션은 통째로 지운다.
+        - 없는 내용을 지어내지 마라. 쓸 게 없는 섹션은 통째로 지운다.
         - 스스로를 도구나 자동화로 지칭하지 마라.
         """;
 
-    const string ReviewerHeader = "## 👀 To Reviewer";
+    static string Task(GhIssue? issue) => issue is null
+        ? "이 저장소를 딱 한 가지만 개선하라."
+        : $"""
+            아래 이슈를 해결하라.
 
-    /// 문체는 사람이 쓴 PR을 따르되, 검증을 안 거쳤다는 사실만은 리뷰어에게 반드시 남긴다.
-    const string ReviewerNote =
-        "빌드와 테스트는 돌리지 않았습니다. 머지 전에 확인 부탁드립니다.";
+            ----- 이슈 #{issue.Number} -----
+            제목: {issue.Title}
+
+            {issue.Body}
+            ----- 이슈 끝 -----
+
+            이슈가 한 번에 끝낼 수 없을 만큼 크면, 그중 독립적으로 의미 있는 한 조각만 처리하고
+            무엇을 남겼는지 PR 본문에 적어라.
+            """;
 
     /// claude --output-format json 응답에서 result 텍스트와 오류 여부를 뽑는다.
     static (string Text, bool Failed) ParseResult(string json)
@@ -397,10 +542,11 @@ sealed partial class Runner(Config cfg)
     /// claude 응답 끝의 TITLE / BRANCH / BODY 블록을 떼어낸다.
     /// 형식이 어긋나면 막지 말고 안전한 기본값으로 메운다 — 개선 자체는 이미 끝난 뒤다.
     /// </summary>
-    static (string Title, string Branch, string Body) ParsePr(string summary)
+    static (string Title, string Branch, string IssueTitle, string IssueBody, string Body) ParsePr(string summary)
     {
         var lines = summary.Split('\n');
-        string title = "", branch = "", body = "";
+        string title = "", branch = "", issueTitle = "", issueBody = "", body = "";
+        var issueBodyStart = -1;
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -409,8 +555,15 @@ sealed partial class Runner(Config cfg)
                 title = line[TitleMarker.Length..].Trim();
             else if (line.StartsWith(BranchMarker, StringComparison.Ordinal))
                 branch = line[BranchMarker.Length..].Trim();
+            else if (line.StartsWith(IssueMarker, StringComparison.Ordinal))
+            {
+                issueTitle = line[IssueMarker.Length..].Trim();
+                issueBodyStart = i + 1;
+            }
             else if (line.StartsWith(BodyMarker, StringComparison.Ordinal))
             {
+                // ISSUE: 줄과 BODY: 사이는 이슈 설명이다.
+                if (issueBodyStart >= 0) issueBody = string.Join('\n', lines[issueBodyStart..i]).Trim();
                 body = string.Join('\n', lines.Skip(i + 1)).Trim();
                 break;
             }
@@ -435,11 +588,11 @@ sealed partial class Runner(Config cfg)
             body = $"## 📌 Summary\n\n{title}";
         }
 
-        // To Reviewer는 템플릿의 마지막 섹션이다. 이미 있으면 그 아래에 덧붙이고, 없으면 섹션째로 만든다.
-        var note = body.Contains(ReviewerHeader, StringComparison.Ordinal)
-            ? $"{body}\n\n{ReviewerNote}"
-            : $"{body}\n\n{ReviewerHeader}\n\n{ReviewerNote}";
-        return (title, branch, note);
+        // 이슈 제목이 없으면 PR 제목에서 타입 접두사만 떼어 쓴다.
+        if (issueTitle.Length == 0) issueTitle = title[(title.IndexOf(':') + 1)..].Trim();
+        if (issueBody.Length == 0) issueBody = body;
+
+        return (title, branch, issueTitle, issueBody, body);
     }
 
     static string FirstLine(string text)

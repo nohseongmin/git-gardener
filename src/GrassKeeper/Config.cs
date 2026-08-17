@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GrassKeeper;
 
@@ -57,6 +58,19 @@ static class Log
     }
 }
 
+/// <summary>이슈를 어떻게 다룰지. 자동 PR도 사람 PR처럼 이슈에서 출발하게 하는 스위치다.</summary>
+enum IssueMode
+{
+    /// 열린 이슈가 있으면 그것을 처리하고, 없으면 스스로 찾아 이슈를 만든 뒤 처리한다.
+    Prefer,
+
+    /// 열린 이슈가 있을 때만 작업한다. 없으면 그 레포는 건너뛴다.
+    Only,
+
+    /// 이슈를 보지도 만들지도 않고 곧장 PR만 올린다.
+    None,
+}
+
 sealed class Config
 {
     const string DefaultRulesRepoName = "coding-rules";
@@ -66,6 +80,7 @@ sealed class Config
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     public string GithubUser { get; set; } = "";
@@ -77,6 +92,11 @@ sealed class Config
     public string LastRunDate { get; set; } = "";
     public bool RunAtStartup { get; set; }
     public int CatchUpDelayMinutes { get; set; } = 5;
+
+    public IssueMode IssueMode { get; set; } = IssueMode.Prefer;
+
+    /// 이 라벨이 붙은 이슈만 고른다. 비워두면 열린 이슈 전부가 대상이다.
+    public string IssueLabel { get; set; } = "";
 
     /// 코딩 규칙을 받아올 "owner/repo". 비워두면 githubUser의 coding-rules 레포.
     public string RulesRepo { get; set; } = "";

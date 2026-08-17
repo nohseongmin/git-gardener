@@ -89,6 +89,20 @@ Conventional Commits. 제목은 claude 결과 요약의 첫 줄에서 뽑고, �
 ### 6. push + PR
 `git push -u origin <branch>` → `gh pr create`. PR URL을 캡처해 알림과 로그에 남긴다.
 
+**PR은 팀 컨벤션을 그대로 따른다.** 자동으로 올라간 티가 나는 PR은 리뷰가 안 된다. `.github/pull_request_template.md`와 같은 형식으로 claude가 직접 본문을 쓰게 하고, 앱은 그걸 그대로 넘긴다.
+
+| 항목 | 형식 | 예 |
+|---|---|---|
+| 제목 | `Type: 한국어 한 줄` | `Fix: Safari input 포커스 시 자동 확대 방지` |
+| 브랜치 | `type/kebab-slug` | `fix/input-focus-auto-zoom` |
+| 본문 | `📌 Summary` / `📚 Tasks` / `👀 To Reviewer` | 빈 섹션은 삭제 |
+
+claude 응답 끝의 `TITLE:` / `BRANCH:` / `BODY:` 세 표식을 파싱한다. 형식이 어긋나면 막지 않고 안전한 기본값(`Chore: 저장소 정리`, `chore/<날짜>-improve`)으로 메운다 — 개선 자체는 이미 끝난 뒤라 여기서 버리면 손해다.
+
+브랜치 이름은 **무엇을 고쳤는지 알아야 정해지므로** 임시 이름(`wip/<난수>`)으로 만들어 작업하고 커밋 직전에 바꾼다. 같은 이름이 원격에 있으면 `-2`, `-3`을 붙인다.
+
+> **문체는 사람의 것을 따르되 사실은 감추지 않는다.** 본문에서 스스로를 자동화로 지칭하지 않지만, `👀 To Reviewer`에는 "빌드와 테스트는 돌리지 않았습니다"를 **앱이 항상 덧붙인다.** 이건 문체 문제가 아니라 리뷰어가 알아야 할 사실이다.
+
 ### 7. 알림 / 로그
 트레이 풍선으로 성공·스킵·실패 + PR 링크. 로그는 `%APPDATA%\GrassKeeper\log\yyyy-MM-dd.log`.
 

@@ -29,13 +29,22 @@ sealed class GhRepo
 /// </summary>
 sealed partial class Runner(Config cfg)
 {
-    const string ProjectUrl = "https://github.com/nohseongmin/GrassKeeper";
     const string AllowedTools = "Read,Edit,Write,Glob,Grep";
     const string DisallowedTools = "Bash";
-    const string FallbackCommitTitle = "chore: automated maintenance";
     const string RulesFile = "RULES.md";
     const int MaxRepoListSize = 200;
     const int RulesCacheHours = 24;
+
+    /// claude 응답에서 PR 정보를 떼어낼 표식.
+    const string TitleMarker = "TITLE:";
+    const string BranchMarker = "BRANCH:";
+    const string BodyMarker = "BODY:";
+
+    const string FallbackTitle = "Chore: 저장소 정리";
+    const string FallbackBranchType = "chore";
+
+    /// 브랜치 이름이 겹칠 때 붙일 접미사의 최대 시도 횟수.
+    const int MaxBranchSuffix = 20;
 
     static readonly TimeSpan GitTimeout = TimeSpan.FromMinutes(10);
     static readonly TimeSpan GhTimeout = TimeSpan.FromMinutes(3);
@@ -57,9 +66,13 @@ sealed partial class Runner(Config cfg)
         ["tests"] = "기존 테스트 관행을 따라 빠진 테스트를 추가하라. 테스트 인프라가 없으면 손대지 말고 그렇게 답하라.",
     };
 
-    /// 커밋 제목으로 쓸 수 있는 한 줄인지 판별한다.
-    [GeneratedRegex(@"^(build|chore|ci|docs|feat|fix|perf|refactor|style|test)(\([^)]+\))?!?: .{3,80}$")]
-    private static partial Regex ConventionalCommit { get; }
+    /// 팀 컨벤션의 제목 형식. 예: "Fix: Safari input 포커스 시 자동 확대 방지"
+    [GeneratedRegex(@"^(Build|Chore|Ci|Deploy|Docs|Feat|Fix|Perf|Refactor|Style|Test)(\([^)]+\))?: .{2,80}$")]
+    private static partial Regex TitleFormat { get; }
+
+    /// 브랜치 형식. 예: "fix/input-focus-auto-zoom"
+    [GeneratedRegex(@"^[a-z]+/[a-z0-9]([a-z0-9._-]*[a-z0-9])?$")]
+    private static partial Regex BranchFormat { get; }
 
     /// 제목, 본문. 트레이 풍선으로 띄운다.
     public event Action<string, string>? Notify;
@@ -129,12 +142,13 @@ sealed partial class Runner(Config cfg)
         var baseBranch = repo.DefaultBranchRef?.Name
             ?? throw new InvalidOperationException("기본 브랜치를 알 수 없습니다. 빈 레포일 수 있습니다.");
         var dir = Path.Combine(Paths.ReposDir, repo.Name);
-        var branch = $"auto/improve-{DateTime.Now:yyyyMMdd-HHmm}";
+
+        // 편집을 하려면 브랜치가 먼저 필요한데, 브랜치 이름은 무엇을 고쳤는지 알아야 정해진다.
+        // 그래서 임시 이름으로 만들고 커밋 직전에 실제 이름으로 바꾼다.
+        var branch = $"wip/{Guid.NewGuid():N}"[..16];
 
         Log.Write($"[{repo.Name}] 작업 사본 동기화");
         await SyncAsync(repo, dir, baseBranch, ct);
-
-        Log.Write($"[{repo.Name}] 브랜치 {branch}");
         await GitAsync(dir, ["checkout", "-b", branch], ct);
 
         Log.Write($"[{repo.Name}] claude 실행 (최대 {ClaudeTimeout.TotalMinutes:0}분)");
@@ -159,10 +173,27 @@ sealed partial class Runner(Config cfg)
             return null;
         }
 
-        var title = CommitTitle(summary);
-        await GitAsync(dir, ["commit", "-m", title], ct);
+        var pr = ParsePr(summary);
+        branch = await UniqueBranchAsync(dir, pr.Branch, ct);
+        await GitAsync(dir, ["branch", "-m", branch], ct);
+        Log.Write($"[{repo.Name}] {branch} — {pr.Title}");
+
+        await GitAsync(dir, ["commit", "-m", pr.Title], ct);
         await GitAsync(dir, ["push", "-u", "origin", branch], ct);
-        return await CreatePullRequestAsync(repo, dir, baseBranch, branch, title, summary, ct);
+        return await CreatePullRequestAsync(repo, dir, baseBranch, branch, pr.Title, pr.Body, ct);
+    }
+
+    /// 같은 이름이 원격에 이미 있으면 push가 실패한다. 비어 있는 이름을 찾아 돌려준다.
+    static async Task<string> UniqueBranchAsync(string dir, string branch, CancellationToken ct)
+    {
+        for (var suffix = 1; suffix <= MaxBranchSuffix; suffix++)
+        {
+            var candidate = suffix == 1 ? branch : $"{branch}-{suffix}";
+            var exists = await Proc.RunAsync("git", ["rev-parse", "--verify", $"origin/{candidate}"],
+                dir, GitTimeout, ct);
+            if (!exists.Ok) return candidate;
+        }
+        throw new InvalidOperationException($"쓸 수 있는 브랜치 이름을 찾지 못했습니다: {branch}");
     }
 
     async Task SyncAsync(GhRepo repo, string dir, string baseBranch, CancellationToken ct)
@@ -211,12 +242,12 @@ sealed partial class Runner(Config cfg)
         return text;
     }
 
-    async Task<string> CreatePullRequestAsync(
-        GhRepo repo, string dir, string baseBranch, string branch, string title, string summary, CancellationToken ct)
+    static async Task<string> CreatePullRequestAsync(
+        GhRepo repo, string dir, string baseBranch, string branch, string title, string body, CancellationToken ct)
     {
         // 본문이 명령줄 상한에 걸리지 않게 파일로 넘긴다.
         var bodyFile = Path.Combine(Path.GetTempPath(), $"grasskeeper-pr-{Guid.NewGuid():N}.md");
-        await File.WriteAllTextAsync(bodyFile, PrBody(summary), ct);
+        await File.WriteAllTextAsync(bodyFile, body, ct);
         try
         {
             var pr = await Proc.RunAsync("gh",
@@ -313,20 +344,37 @@ sealed partial class Runner(Config cfg)
         - git 명령, 커밋, 브랜치, PR 조작 금지. 형상 관리는 호출한 앱이 한다.
         - 새 의존성 추가 금지.
 
-        마무리
-        - 마지막 줄에 변경 요약을 Conventional Commits 한 줄로 출력하라. 예: docs: clarify setup steps in README
-        - 고칠 만한 것을 못 찾았으면 아무 파일도 수정하지 말고 그 이유를 한 줄로 답하라.
+        고칠 만한 것을 못 찾았으면 아무 파일도 수정하지 말고 그 이유를 한 줄로 답하고 끝내라.
+
+        고쳤다면 마지막에 아래 형식을 그대로 출력하라. 표식 세 줄의 철자를 바꾸지 마라.
+
+        TITLE: <Feat|Fix|Docs|Refactor|Test|Chore> 중 하나 + ": " + 한국어 한 줄 요약(80자 이내)
+        BRANCH: 위 타입의 소문자 + "/" + 영문 소문자 kebab-case 단어 2~4개
+        BODY:
+        ## 📌 Summary
+
+        무엇을 왜 고쳤는지 한두 문단. 배경(어떤 상태였는지)부터 쓰고, 그래서 무엇을 했는지로 잇는다.
+
+        ## 📚 Tasks
+
+        - 변경한 것을 항목으로. 파일 나열이 아니라 한 일을 쓴다.
+
+        ## 👀 To Reviewer
+
+        판단이 갈릴 만한 지점, 일부러 안 건드린 것, 리뷰어가 봐줬으면 하는 부분.
+
+        작성 규칙
+        - 존댓말 평문으로 쓴다. 굵은 글씨와 이모지를 본문에 뿌리지 마라(섹션 제목의 이모지는 그대로 둔다).
+        - 표를 만들지 마라. 문단과 목록으로 쓴다.
+        - 없는 내용을 채우지 마라. 쓸 게 없는 섹션은 통째로 지운다.
+        - 스스로를 도구나 자동화로 지칭하지 마라.
         """;
 
-    static string PrBody(string summary) => $"""
-        {summary}
+    const string ReviewerHeader = "## 👀 To Reviewer";
 
-        ---
-        🌱 [GrassKeeper]({ProjectUrl})가 자동 생성한 PR입니다.
-
-        - 자동 세션에는 셸이 차단되어 있어 **빌드·테스트 검증을 거치지 않았습니다.** 머지 전에 직접 확인하세요.
-        - 주입된 규칙: coding-rules `RULES.md` + ponytail
-        """;
+    /// 문체는 사람이 쓴 PR을 따르되, 검증을 안 거쳤다는 사실만은 리뷰어에게 반드시 남긴다.
+    const string ReviewerNote =
+        "빌드와 테스트는 돌리지 않았습니다. 머지 전에 확인 부탁드립니다.";
 
     /// claude --output-format json 응답에서 result 텍스트와 오류 여부를 뽑는다.
     static (string Text, bool Failed) ParseResult(string json)
@@ -345,14 +393,53 @@ sealed partial class Runner(Config cfg)
         }
     }
 
-    static string CommitTitle(string summary)
+    /// <summary>
+    /// claude 응답 끝의 TITLE / BRANCH / BODY 블록을 떼어낸다.
+    /// 형식이 어긋나면 막지 말고 안전한 기본값으로 메운다 — 개선 자체는 이미 끝난 뒤다.
+    /// </summary>
+    static (string Title, string Branch, string Body) ParsePr(string summary)
     {
-        foreach (var line in summary.Split('\n'))
+        var lines = summary.Split('\n');
+        string title = "", branch = "", body = "";
+
+        for (var i = 0; i < lines.Length; i++)
         {
-            var trimmed = line.Trim().Trim('`', '*', '#', ' ');
-            if (ConventionalCommit.IsMatch(trimmed)) return trimmed;
+            var line = lines[i].Trim();
+            if (line.StartsWith(TitleMarker, StringComparison.Ordinal))
+                title = line[TitleMarker.Length..].Trim();
+            else if (line.StartsWith(BranchMarker, StringComparison.Ordinal))
+                branch = line[BranchMarker.Length..].Trim();
+            else if (line.StartsWith(BodyMarker, StringComparison.Ordinal))
+            {
+                body = string.Join('\n', lines.Skip(i + 1)).Trim();
+                break;
+            }
         }
-        return FallbackCommitTitle;
+
+        if (!TitleFormat.IsMatch(title))
+        {
+            Log.Write($"제목 형식이 어긋나 기본값을 씁니다: {(title.Length > 0 ? title : "(없음)")}");
+            title = FallbackTitle;
+        }
+
+        var type = title[..title.IndexOf(':')].Split('(')[0].ToLowerInvariant();
+        if (!BranchFormat.IsMatch(branch) || !branch.StartsWith($"{type}/", StringComparison.Ordinal))
+        {
+            branch = $"{type}/{DateTime.Now:yyyyMMdd}-improve";
+            Log.Write($"브랜치 형식이 어긋나 기본값을 씁니다: {branch}");
+        }
+
+        if (body.Length == 0)
+        {
+            Log.Write("PR 본문을 받지 못해 제목만으로 채웁니다.");
+            body = $"## 📌 Summary\n\n{title}";
+        }
+
+        // To Reviewer는 템플릿의 마지막 섹션이다. 이미 있으면 그 아래에 덧붙이고, 없으면 섹션째로 만든다.
+        var note = body.Contains(ReviewerHeader, StringComparison.Ordinal)
+            ? $"{body}\n\n{ReviewerNote}"
+            : $"{body}\n\n{ReviewerHeader}\n\n{ReviewerNote}";
+        return (title, branch, note);
     }
 
     static string FirstLine(string text)

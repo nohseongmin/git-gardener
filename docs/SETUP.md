@@ -14,6 +14,24 @@ PowerShell에서 순서대로 확인하고, 없는 것만 설치한다.
 
 Visual Studio는 **필요 없다.** UI를 코드로 구성하므로 `dotnet` CLI만으로 빌드된다.
 
+### ⚠️ claude CLI 로그인 (현재 막혀 있는 지점)
+
+`claude --version`이 떠도 그것만으로는 부족하다. **CLI 자체가 로그인되어 있어야** 헤드리스 세션이 돈다. 확인:
+
+```bash
+claude -p "reply with OK only" --output-format json
+```
+
+`is_error: true` 와 함께 이 문장이 나오면 로그인이 안 된 것이다:
+
+```
+Your account does not have access to Claude Code. Please run /login.
+```
+
+이 PC가 지금 이 상태다. env를 전부 걷어내고 `node cli.js`로 직접 실행해도 동일하게 재현되므로, GrassKeeper 쪽 문제가 아니라 **CLI 인증 상태의 문제**다. 대화형으로 `claude`를 띄워 `/login`을 마치면 풀린다. 로그인 전에는 앱이 돌아도 claude 단계에서 매번 실패하고, 로그에 위 문장이 그대로 찍힌다.
+
+CLI 버전도 확인해두면 좋다. 이 PC는 `2.0.46`으로 랩탑(`2.0.64`)보다 낮다 — `npm i -g @anthropic-ai/claude-code`로 올린다.
+
 ### gh 인증
 
 ```bash
@@ -21,6 +39,22 @@ gh auth login --hostname github.com --git-protocol https --web --scopes "repo,wo
 ```
 
 일회용 코드가 뜨면 https://github.com/login/device 에서 입력한다. 필요한 scope는 `repo`(PR 생성), `workflow`, `read:org`.
+
+그리고 **git 자격증명 헬퍼를 반드시 붙인다:**
+
+```bash
+gh auth setup-git --hostname github.com
+```
+
+이게 없으면 전역 설정에는 Git Credential Manager만 남아, 헤드리스로 도는 `git push`가 GUI 인증창을 띄우고 **타임아웃까지 멈춘다.** 붙으면 `git push`가 gh 토큰을 그대로 써서 조용히 통과한다. 확인:
+
+```bash
+git config --global --get-regexp credential
+```
+
+`credential.https://github.com.helper` 에 `gh.exe auth git-credential` 이 보이면 된다.
+
+커밋 작성자도 필요하다 — `git config --global user.name` / `user.email` 이 비어 있으면 커밋 단계에서 실패한다.
 
 ### 레포 클론
 
@@ -82,7 +116,9 @@ claude --plugin-dir "C:\Users\<user>\.claude\plugins\marketplaces\ponytail"
 https://github.com/nohseongmin/coding-rules   →  RULES.md (15KB)
 ```
 
-Runner가 `raw.githubusercontent.com`에서 받아 `%LOCALAPPDATA%\GrassKeeper\rules\`에 캐시한다. 규칙을 고치려면 GrassKeeper가 아니라 **coding-rules 레포를 고친다.**
+Runner가 `gh api`로 받아 `%LOCALAPPDATA%\GrassKeeper\rules\`에 캐시한다(하루 1회 갱신, 실패 시 캐시). 규칙을 고치려면 GrassKeeper가 아니라 **coding-rules 레포를 고친다.**
+
+> `raw.githubusercontent.com`은 쓰지 않는다. 비인증 요청이라 `HTTP 429`에 걸린다 — 구현 중 실제로 재현됐다. ponytail(2.5KB)까지 붙여 총 17.6KB가 `--append-system-prompt`로 들어간다.
 
 PC에 글로벌 `CLAUDE.md`(`~\.claude\CLAUDE.md`)가 따로 있다면 랩탑과 내용을 맞춰두는 게 좋다. 현재 랩탑 쪽은 두 줄뿐이다:
 
@@ -112,9 +148,18 @@ dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:Publish
 
 **3번을 건너뛰지 말 것.** 자동 push가 붙어 있어서 첫 실행부터 실제 PR이 올라간다.
 
-## 랩탑에서 이미 끝난 것
+## 이미 끝난 것
+
+**랩탑**
 
 - gh CLI 2.97.0 설치 + `nohseongmin` 인증 완료 (scope: `gist,read:org,repo,workflow`)
 - ponytail 마켓플레이스 등록 (플러그인 설치는 위 버그로 실패)
 - GrassKeeper 레포 생성 + 설계 문서 커밋
 - 환경 확인: .NET 9 SDK 9.0.315, Node v22.17.1, claude 2.0.64, git 2.51.0
+
+**데스크탑 (구현한 곳)**
+
+- 환경: .NET 9 SDK 9.0.304, gh 2.97.0, git 2.48.1, claude 2.0.46
+- `src/GrassKeeper` 전체 구현 + `dotnet publish` 단일 exe(113MB) 검증
+- 실행 검증: 트레이 기동 → 레포 37개 자동 로드 → UI 정상 렌더까지 확인
+- 미검증: **claude 단계 전체.** 위 로그인 문제로 아직 못 돌려봤다. 따라서 Dry-run(첫 실행 3번)이 여전히 진짜 첫 관문이다.

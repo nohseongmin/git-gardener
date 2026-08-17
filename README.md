@@ -61,4 +61,10 @@ dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:Publish
 
 ## 상태
 
-**설계 완료 / 구현 전.** 설계 문서는 [docs/PLAN.md](docs/PLAN.md), 개발 환경 세팅은 [docs/SETUP.md](docs/SETUP.md) 참고.
+**구현 완료 / 실사용 검증 전.**
+
+- 앱은 빌드·기동·레포 로드·UI까지 확인했다.
+- claude 개선 단계는 **아직 못 돌려봤다.** CLI 로그인이 필요하다 → [docs/SETUP.md](docs/SETUP.md)
+- 첫 실행은 반드시 **Dry-run**부터. 자동 push가 붙어 있다.
+
+설계 문서는 [docs/PLAN.md](docs/PLAN.md), 개발 환경 세팅은 [docs/SETUP.md](docs/SETUP.md) 참고.

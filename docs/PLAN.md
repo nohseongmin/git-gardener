@@ -35,6 +35,8 @@ src/GrassKeeper/
 
 **인코딩은 UTF-8로 고정한다.** 같은 개발자의 이전 프로젝트([GUIForGeminiCli](https://github.com/nohseongmin/GUIForGeminiCli))에서 `chcp 949`로 한글 깨짐을 다뤄야 했는데, `git`/`gh`/`claude`는 모두 UTF-8로 출력하므로 코드페이지를 따라가지 말고 `StandardOutputEncoding = Encoding.UTF8`로 못박는다.
 
+**claude는 `node`로 띄운다.** `git`·`gh`는 `.exe`지만 npm 전역 설치된 claude는 `claude.cmd` / `claude.ps1` 심만 남는다. `CreateProcess`는 PATHEXT를 적용하지 않고 `.exe`만 붙여보므로 `claude`는 "파일 없음"으로 실패한다. 그렇다고 `cmd.exe /c`로 우회하면 주입할 `RULES.md`의 마크다운 표 `|`, `%`, `"` 가 셸에 먹혀 프롬프트가 깨진다. 그래서 심이 있는 디렉토리에서 `node_modules\@anthropic-ai\claude-code\cli.js`를 찾아 **`node.exe`로 직접 실행한다.** `ArgumentList`가 이스케이프를 처리하므로 17KB짜리 시스템 프롬프트도 무손상으로 넘어간다(검증 완료). 네이티브 설치본(`claude.exe`)이 PATH에 있으면 그쪽을 우선 쓰고, `config.json`의 `claudePath`로 직접 지정할 수도 있다.
+
 호출할 외부 명령:
 
 | 도구 | 용도 |
@@ -72,7 +74,9 @@ claude -p "<작업 프롬프트>"
 
 **`--disallowedTools Bash`가 핵심 안전장치다.** 자동 세션에 셸을 주지 않으면 예측 못 한 명령이 실행될 여지가 사라진다. 편집만 시키고 git/PR은 앱이 한다.
 
-**규칙 주입**: `RULES.md`를 `raw.githubusercontent.com`에서 받아 `%LOCALAPPDATA%\GrassKeeper\rules\RULES.md`에 캐시하고(하루 1회 갱신, 실패 시 캐시 사용) `--append-system-prompt`로 넘긴다. 대상 레포에 `CLAUDE.md`를 심는 방식은 커밋에 섞일 위험이 있어 쓰지 않는다.
+**규칙 주입**: `RULES.md`를 `%LOCALAPPDATA%\GrassKeeper\rules\RULES.md`에 캐시하고(하루 1회 갱신, 실패 시 캐시 사용) `--append-system-prompt`로 넘긴다. 대상 레포에 `CLAUDE.md`를 심는 방식은 커밋에 섞일 위험이 있어 쓰지 않는다.
+
+> **`raw.githubusercontent.com`을 쓰지 않는다.** 비인증 요청이라 실제로 `HTTP 429 Too Many Requests`에 걸린다(구현 중 재현됨). 이미 인증된 `gh`가 있으므로 `gh api repos/<owner>/coding-rules/contents/RULES.md -H "Accept: application/vnd.github.raw"`로 받는다. 레이트리밋이 넉넉해지고 비공개 규칙 레포도 그대로 동작한다.
 
 `--output-format json`의 `result` 텍스트는 PR 본문으로 재활용한다.
 
@@ -130,9 +134,13 @@ ponytail과 `RULES.md`가 이미 주입되므로 프롬프트에는 **범위**�
   "model": "sonnet",
   "lastRunDate": "2026-08-17",
   "runAtStartup": true,
-  "catchUpDelayMinutes": 5
+  "catchUpDelayMinutes": 5,
+  "rulesRepo": "",
+  "claudePath": ""
 }
 ```
+
+`githubUser`는 비워두면 `gh`에서 자동으로 채운다. `rulesRepo`를 비우면 `<githubUser>/coding-rules`를, `claudePath`를 비우면 PATH에서 찾은 claude를 쓴다. 손으로 고쳐 넣은 값이 못 쓰는 값이면 로그에 남기고 기본값으로 되돌린다.
 
 ## 알려진 이슈
 
@@ -149,4 +157,22 @@ EPERM: operation not permitted, rename
 
 - **빌드 검증 없이 PR이 올라간다.** `--disallowedTools Bash` 때문에 자동 세션은 컴파일 확인을 못 한다. 이건 규칙 **G-5**("실행 가능한 검증을 선호하라")와 정면으로 충돌하는 지점이다. PR 승인이 사람 손에 있어서 기본 브랜치는 안전하지만, **깨진 코드가 PR로 올라올 수 있다는 걸 전제하고 리뷰해야 한다.** 나중에 레포별 "빌드 검증" 옵션(앱이 직접 `dotnet build` / `npm run build`를 실행하고 실패 시 PR을 만들지 않음)을 붙일 수 있도록 Runner를 열어둔다.
 - **규칙 V-3의 "push only when asked"** 와 자동 push는 충돌하는 것처럼 보이지만, 이 앱을 켜는 행위 자체가 사전 승인에 해당한다. 대신 그 승인이 **브랜치까지만** 미치도록 기본 브랜치 푸시 경로를 코드에서 배제한다.
-- **소재 고갈.** 계정에 레포는 충분히 있지만(36개), 활성 레포 몇 개만 켜두면 몇 주 안에 개선할 게 마른다. 대상을 넓게 켜고 하루 1건 페이스를 권한다.
+- **소재 고갈.** 계정에 레포는 충분히 있지만(37개), 활성 레포 몇 개만 켜두면 몇 주 안에 개선할 게 마른다. 대상을 넓게 켜고 하루 1건 페이스를 권한다.
+
+## 구현하며 설계에서 바뀐 것
+
+설계 문서만 보고 착수했을 때 실제로 막혔던 지점들. 전부 검증하고 반영했다.
+
+| 설계 | 실제 | 이유 |
+|---|---|---|
+| `claude`를 그냥 실행 | `node.exe cli.js` | npm 설치본은 `.exe`가 없고, `cmd.exe` 우회는 프롬프트를 깨뜨린다 |
+| `raw.githubusercontent.com`에서 규칙 수신 | `gh api ... vnd.github.raw` | 비인증 요청이 `HTTP 429`에 걸린다 |
+| `gh api user`로 계정명 조회 | `gh api graphql {viewer{login}}` | 이 계정에서 REST `/user`가 `HTTP 503`을 돌려준다 |
+| 파일 6개 | Config.cs가 `Paths`·`Log`도 함께 소유 | 파일 수를 늘리지 않으려고 인프라를 한 곳에 모았다 |
+
+로그는 **UTF-8 BOM**으로 쓴다. BOM이 없으면 PowerShell 5.1의 `Get-Content`가 ANSI로 읽어 한글 로그가 깨진다(재현 확인).
+
+## 남은 것
+
+- **`claude` CLI 로그인.** 자동 세션이 도는 전제 조건인데 아직 안 되어 있다. SETUP.md 참고.
+- **빌드 검증 옵션.** 위 "짚고 갈 점" 첫 항목. Runner는 열어뒀고 아직 안 붙였다.

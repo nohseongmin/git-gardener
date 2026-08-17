@@ -1,18 +1,128 @@
-# GrassKeeper
+<h1 align="center">GrassKeeper</h1>
 
-> 매일 기존 프로젝트를 자동으로 조금씩 개선하고 PR을 올리는 Windows 트레이 앱.
+<p align="center">
+  <strong>가짜 커밋 없이 잔디를 채운다</strong>
+</p>
 
-부팅과 동시에 트레이에 상주하다가, 정해진 시각에 대상 레포를 하나 골라 **Claude Code 헤드리스 세션**으로 작은 개선을 만들고 브랜치를 파서 **PR까지 올린다.** 사람이 하는 일은 GitHub에서 **PR 승인/머지** 하나뿐이다.
+<p align="center">
+  트레이에 상주하다가 매일 레포 하나를 골라 이슈를 열고, 고치고, PR까지 올린다.<br>
+  사람이 하는 일은 <strong>머지 버튼 하나.</strong><br>
+  빈 커밋도 공백 수정도 쓰지 않는다. 고칠 게 없으면 그날은 그냥 넘어간다.
+</p>
 
-## 원칙
+<p align="center">
+  <a href="#see-it">See it</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#이슈에서-출발한다">이슈</a> ·
+  <a href="#안전장치">안전장치</a> ·
+  <a href="#한계">한계</a> ·
+  <a href="docs/PLAN.md">설계</a> ·
+  <a href="docs/SETUP.md">세팅</a>
+</p>
 
-- **가짜 커밋은 만들지 않는다.** 빈 커밋, 공백 수정, 타임스탬프 갱신 같은 잔디용 트릭은 쓰지 않는다. 실제 diff가 없으면 그날은 PR 없이 건너뛴다.
-- **main은 건드리지 않는다.** 기본 브랜치에 직접 커밋하는 경로가 코드에 아예 없다. 항상 `auto/improve-*` 브랜치.
-- **작업 사본에서만 돈다.** 로컬에서 직접 개발 중인 레포 폴더는 절대 건드리지 않고, `%LOCALAPPDATA%\GrassKeeper\repos\` 아래 별도 사본에서만 작업한다.
-- **셸을 주지 않는다.** 자동 세션에는 파일 편집 도구만 허용하고 Bash는 차단한다. git/PR 조작은 전부 앱이 한다.
-- **그 레포의 양식을 따른다.** PR 본문 형식을 앱이 정하지 않고, 대상 레포의 `pull_request_template.md`를 읽어 그대로 채운다.
+---
 
-## 파이프라인
+## See it
+
+아무것도 안 시켰는데 [daily-tangle](https://github.com/nohseongmin/daily-tangle)에 이게 올라왔다.
+
+<table>
+<tr>
+<th width="50%">📮 이슈 #1 — 문제를 먼저 연다</th>
+<th width="50%">🔧 PR #2 — 그걸 닫는다</th>
+</tr>
+<tr>
+<td valign="top">
+
+**recompute의 지역변수 이름이 실제 값과 맞지 않음**
+
+> `recompute()`에서 이전 교차 쌍 수를 담는 변수 이름이 `wasClear`였다. 값은 숫자(카운트)인데 이름은 불리언처럼 보여, 코드베이스의 "불리언은 is/has/should" 규칙과 어긋나고 `if (r.pairs < wasClear)` 같은 비교식을 읽을 때 오해를 유발한다.
+
+</td>
+<td valign="top">
+
+**Refactor: 교차 수 카운트 변수의 오해 소지 있는 불리언식 이름 정정**
+
+```diff
+-  const wasClear = state.crossPairs;
++  const prevPairs = state.crossPairs;
+-  else if (r.pairs < wasClear) SFX.clear();
++  else if (r.pairs < prevPairs) SFX.clear();
+```
+
+브랜치 `refactor/rename-prev-pairs/#1`
+
+</td>
+</tr>
+</table>
+
+이슈를 여는 것부터 PR이 올라가기까지 **49초.** 커밋 작성자에 봇 표시도, 본문에 "자동 생성됨" 푸터도 없다. 그 레포의 PR 템플릿을 읽어서 채우기 때문에 사람이 올린 PR과 같은 모양이 나온다.
+
+## Install
+
+`git` · [`gh`](https://cli.github.com/)(인증 완료) · [`claude`](https://claude.com/claude-code)(로그인 완료) · .NET 9 SDK가 필요하다.
+
+```bash
+git clone https://github.com/nohseongmin/GrassKeeper && cd GrassKeeper
+```
+
+```bash
+dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+```
+
+exe를 실행하면 계정의 레포 목록이 뜬다. 대상을 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다. 납득되면 `시작프로그램 등록`을 누르고 재부팅하면 끝이다.
+
+<details>
+<summary><strong>헤드리스 push가 인증창에서 멈춘다면</strong></summary>
+
+Windows Git은 시스템 레벨에 Git Credential Manager만 깔아둔다. 트레이에서 도는 `git push`가 GUI 인증창을 띄우고 타임아웃까지 멈춘다.
+
+```bash
+gh auth setup-git --hostname github.com
+```
+
+`git config --global --get-regexp credential`에 `gh.exe auth git-credential`이 보이면 된다. 커밋 작성자(`user.name` / `user.email`)도 설정돼 있어야 한다.
+
+</details>
+
+## 이슈에서 출발한다
+
+사람이 올린 PR은 이슈에서 시작한다. 자동 PR도 그렇게 만든다.
+
+| 모드 | 동작 |
+|---|---|
+| **이슈 우선** (기본) | 열린 이슈가 있으면 그걸 해결한다. 없으면 스스로 찾아 고친 뒤 이슈를 만들고 `Closes`로 건다 |
+| **이슈 있을 때만** | 이슈가 없으면 그 레포는 건너뛴다. 내가 시킨 것만 하게 하는 모드 |
+| **이슈 없이** | 이슈를 보지도 만들지도 않는다 |
+
+이슈를 하나 열어두면 다음 실행 때 그걸 물고 간다. 이미 열린 PR이 잡고 있는 이슈는 건너뛰므로 한 이슈에 PR이 쌓이지 않는다.
+
+## 안전장치
+
+- **가짜 커밋을 만들지 않는다.** 실제 diff가 없으면 브랜치를 지우고 그날은 넘어간다.
+- **main을 건드리지 않는다.** 기본 브랜치에 직접 커밋하는 코드 경로가 없다.
+- **작업 사본에서만 돈다.** 개발 중인 로컬 폴더는 손대지 않고 `%LOCALAPPDATA%\GrassKeeper\repos\`의 별도 사본에서만 작업한다.
+- **셸을 주지 않는다.** 자동 세션에는 파일 편집 도구만 허용하고 Bash는 차단한다. git과 PR 조작은 전부 앱이 한다.
+- **Dry-run은 아무것도 만들지 않는다.** 편집과 diff까지만 보여주고 이슈도 PR도 건드리지 않는다.
+
+<details>
+<summary><strong>주입되는 코딩 규칙</strong></summary>
+
+자동 세션은 [coding-rules](https://github.com/nohseongmin/coding-rules)의 `RULES.md`와 [ponytail](https://github.com/DietrichGebert/ponytail) 미니멀리즘 룰셋을 시스템 프롬프트로 받는다. 이 중 넷이 자동화의 실질적 제약이다.
+
+| 규칙 | 자동화에서의 의미 |
+|---|---|
+| **P0-5** 최소 변경 | 요청 범위 밖 리팩토링 금지. 하루 1건으로 제한하는 근거 |
+| **P0-2** 코드베이스에 맞춰라 | 주변 스타일을 따라가야 PR이 튀지 않는다 |
+| **R-1** 안전망 있는 리팩토링 | 테스트 없는 레포에서는 구조 변경 대신 문서·주석 위주로 |
+| **V-3** 브랜치 분리 | 기본 브랜치 직접 푸시 금지 |
+
+규칙을 고치려면 GrassKeeper가 아니라 coding-rules 레포를 고친다. 하루 한 번 받아서 캐시한다.
+
+</details>
+
+<details>
+<summary><strong>파이프라인</strong></summary>
 
 ```
 스케줄 발화 (또는 부팅 후 catch-up)
@@ -21,61 +131,31 @@
    ↓
 열린 이슈 선택  ── 없으면 ──→ 스스로 고칠 것을 찾는다
    ↓
-작업 사본 동기화  git clone / fetch + reset --hard
+작업 사본 동기화  fetch + reset --hard + clean
    ↓
-Claude 헤드리스 실행  ← 코딩 규칙 + ponytail + 그 레포의 PR 템플릿 주입, 편집 도구만 허용
+Claude 헤드리스 실행  ← 코딩 규칙 + 그 레포의 PR 템플릿 주입, 편집 도구만 허용
    ↓
-변경 있나?  ── 없음 ──→ 브랜치 삭제, 스킵 (PR 만들지 않음)
+변경 있나?  ── 없음 ──→ 브랜치 삭제, 스킵
    ↓ 있음
 (이슈가 없었다면 여기서 이슈 생성)
    ↓
-브랜치 확정  fix/empty-input-null-check/#12
+브랜치 확정  refactor/rename-prev-pairs/#1
    ↓
-커밋 → push → gh pr create (Closes #12)
+커밋 → push → PR 생성 (Closes #1)
    ↓
 트레이 알림 + PR 링크
 ```
 
-## 이슈에서 출발한다
+노트북이 꺼져 있어 예약 시각을 놓친 날은 부팅 5분 뒤에 밀린 실행을 따라잡는다. 이게 없으면 잔디가 그냥 빈다.
 
-사람이 올린 PR은 이슈에서 시작한다. 자동 PR도 그렇게 만든다.
+</details>
 
-- **내가 이슈를 만들면** GrassKeeper가 그걸 읽고 고쳐서 PR을 건다.
-- **이슈가 없으면** 스스로 고칠 것을 찾고, 이슈를 만든 뒤 PR을 건다.
-- 이미 열린 PR이 물고 있는 이슈는 건너뛴다. 한 이슈에 PR이 쌓이지 않는다.
+## 한계
 
-`이슈 있을 때만` 모드로 두면 내가 시킨 것만 처리한다.
+**빌드 검증을 하지 않는다.** 자동 세션에는 셸이 없어서 컴파일도 테스트도 돌려보지 못한다. PR 승인이 사람 손에 있어 기본 브랜치는 안전하지만, **깨진 코드가 PR로 올라올 수 있다는 걸 전제로 리뷰해야 한다.** 문서나 이름 변경 같은 건 괜찮고, 로직을 건드린 PR은 머지 전에 직접 빌드해보는 게 맞다.
 
-## 코딩 규칙
-
-자동 세션은 [nohseongmin/coding-rules](https://github.com/nohseongmin/coding-rules)의 `RULES.md`를 시스템 프롬프트로 주입받는다. 특히 이 규칙들이 자동화의 핵심 제약이다:
-
-| 규칙 | 자동화에서의 의미 |
-|---|---|
-| **P0-5** 최소 변경 | 요청 범위 밖 리팩토링 금지. 하루 개선 1건으로 제한하는 근거 |
-| **P0-2** 코드베이스에 맞춰라 | 주변 스타일을 따라가야 PR이 튀지 않음 |
-| **V-3** 브랜치 분리 | 기본 브랜치 직접 푸시 금지 |
-| **R-1** 안전망 있는 리팩토링 | 테스트 없는 레포에서는 구조 변경보다 문서/주석 위주로 |
-| **V-1** 작고 집중된 커밋 | Conventional Commits, 한 커밋 = 한 논리 변경 |
-
-여기에 [ponytail](https://github.com/DietrichGebert/ponytail) 미니멀리즘 룰셋이 더해져 과잉 엔지니어링을 막는다.
+**소재는 마른다.** 활성 레포 몇 개만 켜두면 몇 주 안에 고칠 게 없어진다. 대상을 넓게 켜고 하루 1건 페이스를 권한다.
 
 ## 스택
 
-C# / .NET 9 / WinForms, **NuGet 의존성 0개**. 단일 실행 파일로 배포.
-
-```
-dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
-```
-
-외부 도구로 `git`, [`gh`](https://cli.github.com/), [`claude`](https://claude.com/claude-code) CLI를 호출한다.
-
-## 상태
-
-**Dry-run 통과 / 실제 PR 검증 전.**
-
-파이프라인 전체가 한 번 돌았다. 규칙 수신 → 작업 사본 동기화 → claude 실행 → 응답 파싱 → PR 본문 작성까지 확인했고, Dry-run이 이슈도 PR도 만들지 않는 것까지 봤다. 실제로 PR을 올리는 경로는 아직 안 돌려봤다.
-
-첫 실행은 반드시 **Dry-run**부터. 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 PR을 올린다.
-
-설계 문서는 [docs/PLAN.md](docs/PLAN.md), 개발 환경 세팅은 [docs/SETUP.md](docs/SETUP.md) 참고.
+C# / .NET 9 / WinForms. **NuGet 의존성 0개**, 파일 5개. 외부 도구로 `git` · `gh` · `claude` CLI를 부른다.

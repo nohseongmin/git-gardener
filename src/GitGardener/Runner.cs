@@ -466,6 +466,20 @@ sealed partial class Runner(Config cfg)
         return rules + "\n\n" + await File.ReadAllTextAsync(Paths.PonytailRules, ct);
     }
 
+    /// <summary>
+    /// claude를 실제로 띄울 수 있는지만 확인한다. API를 부르지 않아 공짜다.
+    /// 설치 경로는 배포마다 바뀌는데, 그걸 예약 시각에 실패 로그로 알면 그날은 이미 빈다.
+    /// </summary>
+    public async Task<string> ClaudeVersionAsync(CancellationToken ct)
+    {
+        var launcher = Proc.ResolveClaude(cfg.ClaudePath);
+        var result = await Proc.RunAsync(
+            launcher.Exe, [.. launcher.Prefix, "--version"], Paths.Roaming, GhTimeout, ct);
+        if (!result.Ok)
+            throw new InvalidOperationException($"claude를 실행하지 못했습니다: {result.Message}");
+        return result.Stdout.Trim();
+    }
+
     /// REST의 /user가 계속 503을 돌려주는 걸 확인했다. 레포 목록도 어차피 GraphQL이라 API 표면을 하나로 맞춘다.
     /// 일시적 장애로 실패해도 예약 실행이 쿨다운 뒤 다시 시도하므로 여기서 재시도하지 않는다.
     static async Task<string> CurrentUserAsync(CancellationToken ct)

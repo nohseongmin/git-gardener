@@ -182,7 +182,18 @@ sealed class MainForm : Form
         SetRunning(true, "레포 목록을 읽는 중");
         try
         {
-            var repos = await new Runner(_cfg).ListReposAsync(_cts.Token);
+            var runner = new Runner(_cfg);
+            try
+            {
+                Log.Write($"claude {await runner.ClaudeVersionAsync(_cts.Token)}");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 점검이 실패해도 목록은 읽는다. 대신 예약 시각까지 모르고 있지는 않게 한다.
+                Log.Write($"claude를 쓸 수 없습니다. 이대로면 예약 실행이 실패합니다: {ex.Message}");
+            }
+
+            var repos = await runner.ListReposAsync(_cts.Token);
             _repos.Items.Clear();
             foreach (var repo in repos.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -246,19 +257,33 @@ sealed class MainForm : Form
         }
     }
 
-    /// <summary>예약 시각이 지났고 오늘 아직 안 돌았으면 실행한다. 껐다 켠 날의 밀린 실행도 여기서 따라잡는다.</summary>
+    /// <summary>
+    /// 하루 한 번 돈다. 오늘 이미 돌았으면 아무것도 하지 않는다.
+    ///
+    /// 오늘 켠 PC라면 예약 시각을 기다리지 않고 부팅 유예만 지나면 바로 돈다.
+    /// 예약 시각까지 기다리면 그 시각에 PC가 꺼져 있는 날은 통째로 비는데,
+    /// 낮에만 쓰는 PC에서는 그게 매일이다.
+    ///
+    /// 어제부터 계속 켜져 있던 경우에만 정해둔 시각을 지킨다.
+    /// </summary>
     void CheckSchedule()
     {
         if (_running || DateTime.Now < _nextAttempt || _cfg.LastRunDate == Today()) return;
 
         var now = DateTime.Now;
-        if (TimeOnly.FromDateTime(now) < _cfg.Schedule) return;
+        var bootedToday = _startedAt.Date == now.Date;
 
-        // 예약 시각이 지난 뒤에 앱이 떴다면 밀린 실행이다. 부팅 직후 몰아치지 않게 유예를 둔다.
-        var missed = TimeOnly.FromDateTime(_startedAt) > _cfg.Schedule;
-        if (missed && now < _startedAt.AddMinutes(_cfg.CatchUpDelayMinutes)) return;
+        if (bootedToday)
+        {
+            // 부팅 직후 몰아치지 않게 유예를 둔다.
+            if (now < _startedAt.AddMinutes(_cfg.CatchUpDelayMinutes)) return;
+        }
+        else if (TimeOnly.FromDateTime(now) < _cfg.Schedule)
+        {
+            return;
+        }
 
-        Log.Write(missed ? "밀린 예약 실행을 따라잡습니다." : "예약 실행");
+        Log.Write(bootedToday ? "부팅 후 오늘 몫 실행" : "예약 실행");
         Run(dryRun: false);
     }
 

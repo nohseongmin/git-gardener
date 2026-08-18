@@ -79,7 +79,7 @@ git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-도구를 확인하고, 빌드하고, `%LOCALAPPDATA%\GitGardenerin`에 넣고, 시작프로그램에 등록한 뒤 트레이에 띄운다. 빌드 폴더에 두지 않는 이유는 시작프로그램이 실행 파일의 현재 경로를 잡기 때문이다. `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
+도구를 확인하고, 빌드하고, `%LOCALAPPDATA%\GitGardener\bin`에 넣고, 시작프로그램에 등록한 뒤 트레이에 띄운다. 빌드 폴더에 두지 않는 이유는 시작프로그램이 실행 파일의 현재 경로를 잡기 때문이다. `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
 
 `-NoStartup`을 붙이면 등록을 건너뛰고, `-Uninstall`은 등록과 실행 파일을 지운다. 설정과 로그는 남는다.
 

@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
-namespace GrassKeeper;
+namespace GitGardener;
 
 readonly record struct ProcResult(int ExitCode, string Stdout, string Stderr)
 {

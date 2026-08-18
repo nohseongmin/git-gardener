@@ -1,6 +1,6 @@
 using Microsoft.Win32;
 
-namespace GrassKeeper;
+namespace GitGardener;
 
 /// <summary>
 /// 설정·실행·로그를 한 화면에 담은 트레이 상주 창.
@@ -9,7 +9,10 @@ namespace GrassKeeper;
 sealed class MainForm : Form
 {
     const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string RunValueName = "GrassKeeper";
+    const string RunValueName = "GitGardener";
+
+    /// 창 제목과 알림에 쓰는 표시 이름. 레지스트리 값 이름과 달리 사람이 읽는 쪽이다.
+    const string AppTitle = "git gardener";
     const int RepoPanelWidth = 240;
     const int SchedulerTickMs = 30_000;
     const int BalloonMs = 10_000;
@@ -60,7 +63,7 @@ sealed class MainForm : Form
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
     readonly Button _startup = new() { AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
-    readonly NotifyIcon _tray = new() { Icon = SystemIcons.Application, Text = "GrassKeeper", Visible = true };
+    readonly NotifyIcon _tray = new() { Icon = SystemIcons.Application, Text = AppTitle, Visible = true };
     readonly System.Windows.Forms.Timer _scheduler = new() { Interval = SchedulerTickMs };
 
     bool _startHidden;
@@ -74,7 +77,7 @@ sealed class MainForm : Form
         _cfg = cfg;
         _startHidden = startHidden;
 
-        Text = "GrassKeeper";
+        Text = AppTitle;
         Icon = SystemIcons.Application;
         // 설정 한 줄이 접히지 않을 만큼은 확보한다.
         MinimumSize = new Size(1010, 560);
@@ -235,7 +238,7 @@ sealed class MainForm : Form
             // 예약 실행이 실패한 뒤 30초마다 재시도하며 두들기지 않도록 쿨다운을 건다.
             _nextAttempt = DateTime.Now.AddMinutes(RetryCooldownMinutes);
             Log.Write($"=== 중단: {ex.Message} (재시도 {RetryCooldownMinutes}분 후) ===");
-            Balloon("GrassKeeper 실패", ex.Message);
+            Balloon($"{AppTitle} 실패", ex.Message);
         }
         finally
         {
@@ -371,7 +374,7 @@ sealed class MainForm : Form
         {
             e.Cancel = true;
             Hide();
-            Balloon("GrassKeeper", "트레이에서 계속 실행 중입니다.");
+            Balloon(AppTitle, "트레이에서 계속 실행 중입니다.");
             return;
         }
 

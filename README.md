@@ -1,13 +1,22 @@
-<h1 align="center">GrassKeeper</h1>
-
 <p align="center">
-  <strong>가짜 커밋 없이 잔디를 채운다</strong>
+  <img src="docs/assets/banner.png" alt="git gardener" width="820">
 </p>
 
 <p align="center">
-  트레이에 상주하다가 매일 레포 하나를 골라 이슈를 열고, 고치고, PR까지 올린다.<br>
+  <strong>정원사는 매일 조금씩 돌본다</strong>
+</p>
+
+<p align="center">
+  트레이에 상주하다가 방치된 레포를 골라 이슈를 열고, 고치고, PR까지 올린다.<br>
   사람이 하는 일은 <strong>머지 버튼 하나.</strong><br>
   빈 커밋도 공백 수정도 쓰지 않는다. 고칠 게 없으면 그날은 그냥 넘어간다.
+</p>
+
+<p align="center">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat" alt=".NET 9">
+  <img src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat" alt="NuGet 의존성 0">
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat" alt="Windows">
 </p>
 
 <p align="center">
@@ -63,14 +72,16 @@
 `git` · [`gh`](https://cli.github.com/)(인증 완료) · [`claude`](https://claude.com/claude-code)(로그인 완료) · .NET 9 SDK가 필요하다.
 
 ```bash
-git clone https://github.com/nohseongmin/GrassKeeper && cd GrassKeeper
+git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 ```
 
 ```bash
-dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
 exe를 실행하면 계정의 레포 목록이 뜬다. 대상을 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다. 납득되면 `시작프로그램 등록`을 누르고 재부팅하면 끝이다.
+
+> exe는 빌드 폴더 밖에 두는 게 좋다. 시작프로그램은 실행 파일의 현재 경로를 등록하므로, `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
 
 <details>
 <summary><strong>헤드리스 push가 인증창에서 멈춘다면</strong></summary>
@@ -101,7 +112,7 @@ gh auth setup-git --hostname github.com
 
 - **가짜 커밋을 만들지 않는다.** 실제 diff가 없으면 브랜치를 지우고 그날은 넘어간다.
 - **main을 건드리지 않는다.** 기본 브랜치에 직접 커밋하는 코드 경로가 없다.
-- **작업 사본에서만 돈다.** 개발 중인 로컬 폴더는 손대지 않고 `%LOCALAPPDATA%\GrassKeeper\repos\`의 별도 사본에서만 작업한다.
+- **작업 사본에서만 돈다.** 개발 중인 로컬 폴더는 손대지 않고 `%LOCALAPPDATA%\GitGardener\repos\`의 별도 사본에서만 작업한다.
 - **셸을 주지 않는다.** 자동 세션에는 파일 편집 도구만 허용하고 Bash는 차단한다. git과 PR 조작은 전부 앱이 한다.
 - **Dry-run은 아무것도 만들지 않는다.** 편집과 diff까지만 보여주고 이슈도 PR도 건드리지 않는다.
 
@@ -112,12 +123,12 @@ gh auth setup-git --hostname github.com
 
 | 규칙 | 자동화에서의 의미 |
 |---|---|
-| **P0-5** 최소 변경 | 요청 범위 밖 리팩토링 금지. 하루 1건으로 제한하는 근거 |
+| **P0-5** 최소 변경 | 요청 범위 밖 리팩토링 금지. 한 번에 한 건으로 제한하는 근거 |
 | **P0-2** 코드베이스에 맞춰라 | 주변 스타일을 따라가야 PR이 튀지 않는다 |
 | **R-1** 안전망 있는 리팩토링 | 테스트 없는 레포에서는 구조 변경 대신 문서·주석 위주로 |
 | **V-3** 브랜치 분리 | 기본 브랜치 직접 푸시 금지 |
 
-규칙을 고치려면 GrassKeeper가 아니라 coding-rules 레포를 고친다. 하루 한 번 받아서 캐시한다.
+규칙을 고치려면 git gardener가 아니라 coding-rules 레포를 고친다. 하루 한 번 받아서 캐시한다.
 
 </details>
 
@@ -146,7 +157,7 @@ Claude 헤드리스 실행  ← 코딩 규칙 + 그 레포의 PR 템플릿 주�
 트레이 알림 + PR 링크
 ```
 
-노트북이 꺼져 있어 예약 시각을 놓친 날은 부팅 5분 뒤에 밀린 실행을 따라잡는다. 이게 없으면 잔디가 그냥 빈다.
+노트북이 꺼져 있어 예약 시각을 놓친 날은 부팅 5분 뒤에 밀린 실행을 따라잡는다. 이게 없으면 손이 아예 안 간다.
 
 </details>
 
@@ -154,8 +165,12 @@ Claude 헤드리스 실행  ← 코딩 규칙 + 그 레포의 PR 템플릿 주�
 
 **빌드 검증을 하지 않는다.** 자동 세션에는 셸이 없어서 컴파일도 테스트도 돌려보지 못한다. PR 승인이 사람 손에 있어 기본 브랜치는 안전하지만, **깨진 코드가 PR로 올라올 수 있다는 걸 전제로 리뷰해야 한다.** 문서나 이름 변경 같은 건 괜찮고, 로직을 건드린 PR은 머지 전에 직접 빌드해보는 게 맞다.
 
-**소재는 마른다.** 활성 레포 몇 개만 켜두면 몇 주 안에 고칠 게 없어진다. 대상을 넓게 켜고 하루 1건 페이스를 권한다.
+**소재는 마른다.** 활성 레포 몇 개만 켜두면 몇 주 안에 고칠 게 없어진다. 대상을 넓게 켜두는 편이 낫다.
 
 ## 스택
 
 C# / .NET 9 / WinForms. **NuGet 의존성 0개**, 파일 5개. 외부 도구로 `git` · `gh` · `claude` CLI를 부른다.
+
+## License
+
+[MIT](LICENSE)

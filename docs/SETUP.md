@@ -71,7 +71,7 @@ git config --global --get-regexp credential
 ### 레포 클론
 
 ```bash
-git clone https://github.com/nohseongmin/GrassKeeper
+git clone https://github.com/nohseongmin/git-gardener
 ```
 
 ## ponytail
@@ -128,7 +128,7 @@ claude --plugin-dir "C:\Users\<user>\.claude\plugins\marketplaces\ponytail"
 https://github.com/nohseongmin/coding-rules   →  RULES.md (15KB)
 ```
 
-Runner가 `gh api`로 받아 `%LOCALAPPDATA%\GrassKeeper\rules\`에 캐시한다(하루 1회 갱신, 실패 시 캐시). 규칙을 고치려면 GrassKeeper가 아니라 **coding-rules 레포를 고친다.**
+Runner가 `gh api`로 받아 `%LOCALAPPDATA%\GitGardener\rules\`에 캐시한다(하루 1회 갱신, 실패 시 캐시). 규칙을 고치려면 git gardener가 아니라 **coding-rules 레포를 고친다.**
 
 > `raw.githubusercontent.com`은 쓰지 않는다. 비인증 요청이라 `HTTP 429`에 걸린다 — 구현 중 실제로 재현됐다. ponytail(2.5KB)까지 붙여 총 17.6KB가 `--append-system-prompt`로 들어간다.
 
@@ -144,10 +144,10 @@ PC에 글로벌 `CLAUDE.md`(`~\.claude\CLAUDE.md`)가 따로 있다면 랩탑과
 ## 빌드
 
 ```bash
-dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
-산출물은 `src/GrassKeeper/bin/Release/net9.0-windows/win-x64/publish/GrassKeeper.exe`.
+산출물은 `src/GitGardener/bin/Release/net9.0-windows/win-x64/publish/GitGardener.exe`.
 
 ## 첫 실행 순서
 
@@ -166,13 +166,13 @@ dotnet publish src/GrassKeeper -c Release -r win-x64 --self-contained -p:Publish
 
 - gh CLI 2.97.0 설치 + `nohseongmin` 인증 완료 (scope: `gist,read:org,repo,workflow`)
 - ponytail 마켓플레이스 등록 (플러그인 설치는 위 버그로 실패)
-- GrassKeeper 레포 생성 + 설계 문서 커밋
+- git gardener 레포 생성 + 설계 문서 커밋
 - 환경 확인: .NET 9 SDK 9.0.315, Node v22.17.1, claude 2.0.64, git 2.51.0
 
 **데스크탑 (구현한 곳)**
 
 - 환경: .NET 9 SDK 9.0.304, gh 2.97.0, git 2.48.1, claude 2.1.233
-- `src/GrassKeeper` 전체 구현 + `dotnet publish` 단일 exe 검증
+- `src/GitGardener` 전체 구현 + `dotnet publish` 단일 exe 검증
 - 실행 검증: 트레이 기동 → 레포 37개 자동 로드 → UI 정상 렌더
 - gh 인증 + `gh auth setup-git` 완료 (헤드리스 push 통과 확인)
 - claude CLI 로그인 완료

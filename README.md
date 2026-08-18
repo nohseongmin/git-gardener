@@ -76,12 +76,14 @@ git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 ```
 
 ```bash
-dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-exe를 실행하면 계정의 레포 목록이 뜬다. 대상을 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다. 납득되면 `시작프로그램 등록`을 누르고 재부팅하면 끝이다.
+도구를 확인하고, 빌드하고, `%LOCALAPPDATA%\GitGardenerin`에 넣고, 시작프로그램에 등록한 뒤 트레이에 띄운다. 빌드 폴더에 두지 않는 이유는 시작프로그램이 실행 파일의 현재 경로를 잡기 때문이다. `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
 
-> exe는 빌드 폴더 밖에 두는 게 좋다. 시작프로그램은 실행 파일의 현재 경로를 등록하므로, `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
+`-NoStartup`을 붙이면 등록을 건너뛰고, `-Uninstall`은 등록과 실행 파일을 지운다. 설정과 로그는 남는다.
+
+그다음은 트레이 아이콘을 더블클릭해 대상 레포를 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다.
 
 <details>
 <summary><strong>헤드리스 push가 인증창에서 멈춘다면</strong></summary>

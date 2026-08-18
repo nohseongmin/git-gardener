@@ -1,10 +1,10 @@
-namespace GrassKeeper;
+namespace GitGardener;
 
 static class Program
 {
     public const string TrayArg = "--tray";
 
-    const string SingleInstanceMutex = @"Local\GrassKeeper.SingleInstance";
+    const string SingleInstanceMutex = @"Local\GitGardener.SingleInstance";
 
     [STAThread]
     static void Main(string[] args)

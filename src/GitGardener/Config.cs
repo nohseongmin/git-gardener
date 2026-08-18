@@ -2,12 +2,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace GrassKeeper;
+namespace GitGardener;
 
 /// <summary>앱이 쓰는 모든 경로. 로밍=사용자 설정·로그, 로컬=언제든 지워도 되는 작업 사본.</summary>
 static class Paths
 {
-    const string AppName = "GrassKeeper";
+    const string AppName = "GitGardener";
 
     public static string Roaming { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName);
@@ -87,6 +87,11 @@ sealed class Config
     public List<string> EnabledRepos { get; set; } = [];
     public string ScheduleTime { get; set; } = DefaultScheduleTime;
     public int ReposPerDay { get; set; } = 1;
+
+    /// 켜면 하루 처리량을 reposPerDay 대신 1~maxReposPerDay 사이에서 매일 새로 뽑는다.
+    public bool VaryDailyLoad { get; set; } = true;
+
+    public int MaxReposPerDay { get; set; } = 10;
     public string ImprovementType { get; set; } = "auto";
     public string Model { get; set; } = "sonnet";
     public string LastRunDate { get; set; } = "";
@@ -145,6 +150,11 @@ sealed class Config
         {
             Log.Write($"reposPerDay {ReposPerDay}는 1보다 작아 1로 되돌립니다.");
             ReposPerDay = 1;
+        }
+        if (MaxReposPerDay < 1)
+        {
+            Log.Write($"maxReposPerDay {MaxReposPerDay}는 1보다 작아 1로 되돌립니다.");
+            MaxReposPerDay = 1;
         }
         if (CatchUpDelayMinutes < 0)
         {

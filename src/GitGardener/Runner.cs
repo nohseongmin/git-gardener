@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace GrassKeeper;
+namespace GitGardener;
 
 sealed class GhBranch
 {
@@ -135,10 +135,11 @@ sealed partial class Runner(Config cfg)
         var repos = await ListReposAsync(ct);
 
         // 가장 오래 안 건드린 레포부터. 하루 처리량만큼만.
+        var quota = DailyQuota();
         var targets = repos
             .Where(r => cfg.EnabledRepos.Contains(r.Name))
             .OrderBy(r => r.UpdatedAt)
-            .Take(cfg.ReposPerDay)
+            .Take(quota)
             .ToList();
 
         // 0건을 정상 종료로 처리하면 그날이 "완료"로 찍혀 다음 날까지 안 돈다.
@@ -172,6 +173,19 @@ sealed partial class Runner(Config cfg)
             }
         }
         return created;
+    }
+
+    /// <summary>
+    /// 그날 손볼 레포 수. 매일 같은 양을 처리하면 실제 작업 리듬과 동떨어져서 범위 안에서 새로 뽑는다.
+    /// 실제로 몇 건이 나오는지는 별개다 — 고칠 게 없는 레포는 그대로 건너뛰므로 이 수보다 적을 수 있다.
+    /// </summary>
+    int DailyQuota()
+    {
+        if (!cfg.VaryDailyLoad) return cfg.ReposPerDay;
+
+        var quota = Random.Shared.Next(1, cfg.MaxReposPerDay + 1);
+        Log.Write($"오늘 처리량: {quota}개 (1~{cfg.MaxReposPerDay})");
+        return quota;
     }
 
     /// <returns>PR URL. 변경이 없거나 dry-run이면 null.</returns>
@@ -285,7 +299,7 @@ sealed partial class Runner(Config cfg)
 
     static async Task<int> CreateIssueAsync(GhRepo repo, string title, string body, CancellationToken ct)
     {
-        var bodyFile = Path.Combine(Path.GetTempPath(), $"grasskeeper-issue-{Guid.NewGuid():N}.md");
+        var bodyFile = Path.Combine(Path.GetTempPath(), $"gitgardener-issue-{Guid.NewGuid():N}.md");
         await File.WriteAllTextAsync(bodyFile, body, ct);
         try
         {
@@ -387,7 +401,7 @@ sealed partial class Runner(Config cfg)
         GhRepo repo, string dir, string baseBranch, string branch, string title, string body, CancellationToken ct)
     {
         // 본문이 명령줄 상한에 걸리지 않게 파일로 넘긴다.
-        var bodyFile = Path.Combine(Path.GetTempPath(), $"grasskeeper-pr-{Guid.NewGuid():N}.md");
+        var bodyFile = Path.Combine(Path.GetTempPath(), $"gitgardener-pr-{Guid.NewGuid():N}.md");
         await File.WriteAllTextAsync(bodyFile, body, ct);
         try
         {

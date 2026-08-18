@@ -1,4 +1,4 @@
-# GrassKeeper 설계
+# git gardener 설계
 
 > 이 문서만 보고 개발에 착수할 수 있는 것을 목표로 한다.
 
@@ -15,12 +15,12 @@
 ## 파일 구조
 
 ```
-GrassKeeper.sln
-src/GrassKeeper/
-  GrassKeeper.csproj   # net9.0-windows, UseWindowsForms, single-file self-contained
+GitGardener.sln
+src/GitGardener/
+  GitGardener.csproj   # net9.0-windows, UseWindowsForms, single-file self-contained
   Program.cs           # 진입점. --tray 플래그면 창 없이 트레이로 시작
   MainForm.cs          # UI 전체를 코드로 구성 (Designer/resx 없음)
-  Config.cs            # 설정 모델 + %APPDATA%\GrassKeeper\config.json 로드/저장
+  Config.cs            # 설정 모델 + %APPDATA%\GitGardener\config.json 로드/저장
   Proc.cs              # git/gh/claude 프로세스 실행 래퍼
   Runner.cs            # 파이프라인 본체
 ```
@@ -63,7 +63,7 @@ src/GrassKeeper/
 레포 1개당:
 
 ### 1. 작업 사본 준비
-`%LOCALAPPDATA%\GrassKeeper\repos\<name>` 에 없으면 `git clone`, 있으면 `git fetch origin` + `git reset --hard origin/<기본브랜치>` + `git clean -fd`.
+`%LOCALAPPDATA%\GitGardener\repos\<name>` 에 없으면 `git clone`, 있으면 `git fetch origin` + `git reset --hard origin/<기본브랜치>` + `git clean -fd`.
 
 > 개발자가 실제로 작업 중인 로컬 레포 폴더는 **절대 건드리지 않는다.** 항상 이 전용 사본에서만 돈다.
 
@@ -86,7 +86,7 @@ claude -p "<작업 프롬프트>"
 
 **`--disallowedTools Bash`가 핵심 안전장치다.** 자동 세션에 셸을 주지 않으면 예측 못 한 명령이 실행될 여지가 사라진다. 편집만 시키고 git/PR은 앱이 한다.
 
-**규칙 주입**: `RULES.md`를 `%LOCALAPPDATA%\GrassKeeper\rules\RULES.md`에 캐시하고(하루 1회 갱신, 실패 시 캐시 사용) `--append-system-prompt`로 넘긴다. 대상 레포에 `CLAUDE.md`를 심는 방식은 커밋에 섞일 위험이 있어 쓰지 않는다.
+**규칙 주입**: `RULES.md`를 `%LOCALAPPDATA%\GitGardener\rules\RULES.md`에 캐시하고(하루 1회 갱신, 실패 시 캐시 사용) `--append-system-prompt`로 넘긴다. 대상 레포에 `CLAUDE.md`를 심는 방식은 커밋에 섞일 위험이 있어 쓰지 않는다.
 
 > **`raw.githubusercontent.com`을 쓰지 않는다.** 비인증 요청이라 실제로 `HTTP 429 Too Many Requests`에 걸린다(구현 중 재현됨). 이미 인증된 `gh`가 있으므로 `gh api repos/<owner>/coding-rules/contents/RULES.md -H "Accept: application/vnd.github.raw"`로 받는다. 레이트리밋이 넉넉해지고 비공개 규칙 레포도 그대로 동작한다.
 
@@ -141,7 +141,7 @@ claude 응답 끝의 `TITLE:` / `BRANCH:` / `ISSUE:` / `BODY:` 표식을 파싱�
 - **Dry-run은 이슈도 PR도 만들지 않는다.**
 
 ### 7. 알림 / 로그
-트레이 풍선으로 성공·스킵·실패 + PR 링크. 로그는 `%APPDATA%\GrassKeeper\log\yyyy-MM-dd.log`.
+트레이 풍선으로 성공·스킵·실패 + PR 링크. 로그는 `%APPDATA%\GitGardener\log\yyyy-MM-dd.log`.
 
 **실패해도 브랜치를 지우지 않는다** — 원인 추적용으로 남긴다.
 
@@ -173,7 +173,7 @@ ponytail과 `RULES.md`가 이미 주입되므로 프롬프트에는 **범위**�
 
 **노트북에서는 예약 시각에 컴퓨터가 꺼져 있는 경우가 많다.** 그래서 catch-up을 넣는다: 시작 시 `config.json`의 `lastRunDate`가 오늘이 아니고 예약 시각이 이미 지났으면, 부팅 5분 뒤에 밀린 실행을 자동으로 돌린다. 이게 없으면 잔디가 그냥 빈다.
 
-## 설정 (`%APPDATA%\GrassKeeper\config.json`)
+## 설정 (`%APPDATA%\GitGardener\config.json`)
 
 ```json
 {
@@ -181,6 +181,8 @@ ponytail과 `RULES.md`가 이미 주입되므로 프롬프트에는 **범위**�
   "enabledRepos": ["repo-a", "repo-b"],
   "scheduleTime": "22:00",
   "reposPerDay": 1,
+  "varyDailyLoad": true,
+  "maxReposPerDay": 10,
   "improvementType": "auto",
   "model": "sonnet",
   "lastRunDate": "2026-08-17",
@@ -193,7 +195,9 @@ ponytail과 `RULES.md`가 이미 주입되므로 프롬프트에는 **범위**�
 }
 ```
 
-`githubUser`는 비워두면 `gh`에서 자동으로 채운다. `rulesRepo`를 비우면 `<githubUser>/coding-rules`를, `claudePath`를 비우면 PATH에서 찾은 claude를 쓴다. `issueMode`는 `prefer` / `only` / `none`이고, `issueLabel`을 비우면 열린 이슈 전부가 대상이다. 손으로 고쳐 넣은 값이 못 쓰는 값이면 로그에 남기고 기본값으로 되돌린다.
+`githubUser`는 비워두면 `gh`에서 자동으로 채운다. `rulesRepo`를 비우면 `<githubUser>/coding-rules`를, `claudePath`를 비우면 PATH에서 찾은 claude를 쓴다. `issueMode`는 `prefer` / `only` / `none`이고, `issueLabel`을 비우면 열린 이슈 전부가 대상이다.
+
+`varyDailyLoad`를 켜면 그날 손볼 레포 수를 `reposPerDay` 대신 1~`maxReposPerDay` 사이에서 매일 새로 뽑는다. 매일 같은 양을 처리하면 실제 작업 리듬과 동떨어지기 때문이다. 실제로 몇 건이 나오는지는 별개다 — 고칠 게 없는 레포는 그대로 건너뛰므로 뽑힌 수보다 적게 나온다. 손으로 고쳐 넣은 값이 못 쓰는 값이면 로그에 남기고 기본값으로 되돌린다.
 
 ## 알려진 이슈
 

@@ -66,16 +66,21 @@ sealed class MainForm : Form
     readonly NotifyIcon _tray = new() { Icon = SystemIcons.Application, Text = AppTitle, Visible = true };
     readonly System.Windows.Forms.Timer _scheduler = new() { Interval = SchedulerTickMs };
 
+    RegisteredWaitHandle? _showWait;
     bool _startHidden;
     bool _reposLoaded;
     bool _running;
     bool _exiting;
     DateTime _nextAttempt = DateTime.MinValue;
 
-    public MainForm(Config cfg, bool startHidden)
+    public MainForm(Config cfg, bool startHidden, WaitHandle showRequested)
     {
         _cfg = cfg;
         _startHidden = startHidden;
+
+        // 두 번째 실행이 신호를 보내면 이 창을 띄운다.
+        _showWait = ThreadPool.RegisterWaitForSingleObject(
+            showRequested, (_, _) => OnShowRequested(), null, Timeout.Infinite, executeOnlyOnce: false);
 
         Text = AppTitle;
         Icon = SystemIcons.Application;
@@ -366,6 +371,21 @@ sealed class MainForm : Form
         _tray.ShowBalloonTip(BalloonMs);
     }
 
+    /// 두 번째 인스턴스가 보낸 신호. 스레드풀에서 오므로 UI 스레드로 넘긴다.
+    void OnShowRequested()
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            if (InvokeRequired) BeginInvoke(ShowWindow);
+            else ShowWindow();
+        }
+        catch (ObjectDisposedException)
+        {
+            // 종료 중이다. 띄울 창이 없다.
+        }
+    }
+
     void ShowWindow()
     {
         Show();
@@ -415,6 +435,7 @@ sealed class MainForm : Form
     {
         if (disposing)
         {
+            _showWait?.Unregister(null);
             _tray.Dispose();
             _scheduler.Dispose();
             _cts.Dispose();

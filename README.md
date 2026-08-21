@@ -69,21 +69,48 @@
 
 ## Install
 
-`git` · [`gh`](https://cli.github.com/)(인증 완료) · [`claude`](https://claude.com/claude-code)(로그인 완료) · .NET 9 SDK가 필요하다.
+### 실행 파일만 받아서 (권장)
+
+[Releases](https://github.com/nohseongmin/git-gardener/releases/latest)에서 `GitGardener.exe`를 받는다. .NET SDK가 필요 없다.
+
+받은 자리에서 그냥 실행해도 되지만, 로그온마다 자동으로 뜨게 하려면 같이 받은 `install.ps1`에 넘긴다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -SourceExe .\GitGardener.exe
+```
+
+### 소스에서 빌드해서
 
 ```bash
 git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 ```
 
-```bash
+```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-도구를 확인하고, 빌드하고, `%LOCALAPPDATA%\GitGardener\bin`에 넣고, 시작프로그램에 등록한 뒤 트레이에 띄운다. 빌드 폴더에 두지 않는 이유는 시작프로그램이 실행 파일의 현재 경로를 잡기 때문이다. `bin\Release\...`를 등록하면 `dotnet clean` 한 번에 깨진다.
+### 설치 스크립트가 하는 일
 
-`-NoStartup`을 붙이면 등록을 건너뛰고, `-Uninstall`은 등록과 실행 파일을 지운다. 설정과 로그는 남는다.
+필요한 도구(`git` · [`gh`](https://cli.github.com/) 인증 · [`claude`](https://claude.com/claude-code) 로그인 · 빌드할 때만 .NET 9 SDK)를 확인하고, `%LOCALAPPDATA%\GitGardener\bin`에 넣고, 로그온 시 자동 실행을 걸고, 트레이에 띄운다.
+
+`-NoStartup`이면 자동 실행을 건너뛰고, `-Uninstall`이면 되돌린다. 설정과 로그는 남는다.
 
 그다음은 트레이 아이콘을 더블클릭해 대상 레포를 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다.
+
+<details>
+<summary><strong>자동 실행에 시작 폴더를 쓰는 이유</strong></summary>
+
+`HKCU\...\Run` 키를 쓰다가 옮겼다. 등록도 되어 있고 사용 안 함 플래그도 없는데 로그온 때 실행되지 않는 일이 있었다. 탐색기는 정상 시작했고 실행 파일도 멀쩡한데 프로세스만 뜨지 않았다.
+
+예약 작업(`schtasks /SC ONLOGON`)은 관리자 권한을 요구해서 설치 과정에 넣을 수 없다. 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
+
+```
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\GitGardener.lnk
+```
+
+설치 스크립트와 앱 모두 예전 Run 키 항목이 남아 있으면 지운다. 둘 다 살아 있으면 로그온 때 두 번 뜬다.
+
+</details>
 
 <details>
 <summary><strong>헤드리스 push가 인증창에서 멈춘다면</strong></summary>

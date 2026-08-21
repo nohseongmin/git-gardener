@@ -18,13 +18,17 @@
 [CmdletBinding()]
 param(
     [switch]$NoStartup,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+
+    # 미리 받아둔 실행 파일을 쓰면 빌드를 건너뛴다. .NET SDK가 필요 없다.
+    [string]$SourceExe
 )
 
 $ErrorActionPreference = 'Stop'
 
 $AppName    = 'GitGardener'
-$RunKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$LegacyRunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$StartupLink  = Join-Path ([Environment]::GetFolderPath('Startup')) "$AppName.lnk"
 $InstallDir = Join-Path $env:LOCALAPPDATA "$AppName\bin"
 $ExePath    = Join-Path $InstallDir "$AppName.exe"
 $Root       = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -32,6 +36,25 @@ $Root       = Split-Path -Parent $MyInvocation.MyCommand.Path
 function Say  { param($m) Write-Host "  $m" }
 function Step { param($m) Write-Host "`n$m" -ForegroundColor Cyan }
 function Die  { param($m) Write-Host "`n$m" -ForegroundColor Red; exit 1 }
+
+# 로그온 시 자동 실행. HKCU Run 키는 로그온 때 실행되지 않는 경우가 있었고,
+# 예약 작업은 로그온 트리거라 관리자 권한을 요구한다.
+# 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
+function Set-Startup {
+    param([string]$Exe)
+    $sh = New-Object -ComObject WScript.Shell
+    $s = $sh.CreateShortcut($StartupLink)
+    $s.TargetPath = $Exe
+    $s.Arguments = '--tray'
+    $s.WorkingDirectory = Split-Path $Exe
+    $s.Description = 'git gardener - 트레이 상주'
+    $s.Save()
+}
+
+# 예전 등록이 남아 있으면 지운다. 둘 다 살아 있으면 로그온 때 두 번 뜼다.
+function Remove-LegacyRunEntry {
+    Remove-ItemProperty -Path $LegacyRunKey -Name $AppName -ErrorAction SilentlyContinue
+}
 
 function Stop-App {
     foreach ($p in @(Get-Process $AppName -ErrorAction SilentlyContinue)) {
@@ -42,7 +65,8 @@ function Stop-App {
 if ($Uninstall) {
     Step '제거'
     Stop-App
-    Remove-ItemProperty -Path $RunKey -Name $AppName -ErrorAction SilentlyContinue
+    Remove-LegacyRunEntry
+    if (Test-Path $StartupLink) { Remove-Item $StartupLink -Force }
     Say '시작프로그램 등록 해제'
     if (Test-Path $InstallDir) {
         Remove-Item $InstallDir -Recurse -Force
@@ -53,11 +77,20 @@ if ($Uninstall) {
     exit 0
 }
 
+if ($SourceExe) {
+    if (-not (Test-Path $SourceExe)) { Die "지정한 실행 파일이 없습니다: $SourceExe" }
+    $SourceExe = (Resolve-Path $SourceExe).Path
+}
+
 Step '필요한 도구 확인'
 
-$sdk = @(& dotnet --list-sdks | Where-Object { $_ -match '^9\.' })
-if ($sdk.Count -eq 0) { Die '.NET 9 SDK가 없습니다.  winget install Microsoft.DotNet.SDK.9' }
-Say ".NET SDK $(($sdk[0] -split ' ')[0])"
+if (-not $SourceExe) {
+    $sdk = @(& dotnet --list-sdks | Where-Object { $_ -match '^9\.' })
+    if ($sdk.Count -eq 0) { Die '.NET 9 SDK가 없습니다.  winget install Microsoft.DotNet.SDK.9' }
+    Say ".NET SDK $(($sdk[0] -split ' ')[0])"
+} else {
+    Say "받아둔 실행 파일을 씁니다: $SourceExe"
+}
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Die 'git이 없습니다.  winget install Git.Git' }
 Say (& git --version)
@@ -87,11 +120,15 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 }
 Say "claude $(& claude --version)"
 
+if ($SourceExe) {
+    $built = $SourceExe
+} else {
 Step '빌드'
 & dotnet publish (Join-Path $Root 'src\GitGardener') -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -v q --nologo
 if ($LASTEXITCODE -ne 0) { Die '빌드에 실패했습니다.' }
 
-$built = Join-Path $Root 'src\GitGardener\bin\Release\net9.0-windows\win-x64\publish\GitGardener.exe'
+    $built = Join-Path $Root 'src\GitGardener\bin\Release\net9.0-windows\win-x64\publish\GitGardener.exe'
+}
 if (-not (Test-Path $built)) { Die "빌드 결과물을 찾지 못했습니다: $built" }
 
 Step '설치'
@@ -100,10 +137,12 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item $built $ExePath -Force
 Say ('{0}  ({1:N0} MB)' -f $ExePath, ((Get-Item $ExePath).Length / 1MB))
 
+Remove-LegacyRunEntry
 if ($NoStartup) {
     Say '시작프로그램 등록은 건너뜁니다 (-NoStartup)'
 } else {
-    Set-ItemProperty -Path $RunKey -Name $AppName -Value ('"{0}" --tray' -f $ExePath)
+    Set-Startup -Exe $ExePath
+    if (-not (Test-Path $StartupLink)) { Die '시작프로그램 등록에 실패했습니다.' }
     Say '시작프로그램 등록 완료'
 }
 

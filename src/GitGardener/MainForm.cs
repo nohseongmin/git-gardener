@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 using Microsoft.Win32;
 
@@ -11,8 +13,11 @@ namespace GitGardener;
 /// </summary>
 sealed class MainForm : Form
 {
-    const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string RunValueName = "GitGardener";
+    /// 예전 방식. 로그온 때 조용히 씹히는 일이 있어 시작 폴더로 옮겼고, 남아 있으면 지운다.
+    const string LegacyRunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    const string LegacyRunValueName = "GitGardener";
+
+    const string StartupLinkName = "GitGardener.lnk";
 
     /// 창 제목과 알림에 쓰는 표시 이름. 레지스트리 값 이름과 달리 사람이 읽는 쪽이다.
     const string AppTitle = "git gardener";
@@ -319,25 +324,63 @@ sealed class MainForm : Form
     void UpdateStartupButton() =>
         _startup.Text = IsRegisteredAtStartup() ? "시작프로그램 해제" : "시작프로그램 등록";
 
-    static bool IsRegisteredAtStartup()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
-        return key?.GetValue(RunValueName) is not null;
-    }
+    static string StartupLinkPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupLinkName);
 
+    static bool IsRegisteredAtStartup() => File.Exists(StartupLinkPath);
+
+    /// <summary>
+    /// 시작 폴더에 바로가기를 둔다. HKCU Run 키는 로그온 때 실행되지 않는 경우가 있었고,
+    /// 예약 작업은 로그온 트리거라 관리자 권한을 요구해서 설치 과정에 넣을 수 없다.
+    /// 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
+    /// </summary>
     static void SetStartup(bool enabled)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true)
-            ?? throw new InvalidOperationException($@"레지스트리 키를 열지 못했습니다: HKCU\{RunKeyPath}");
+        RemoveLegacyRunEntry();
 
         if (!enabled)
         {
-            key.DeleteValue(RunValueName, throwOnMissingValue: false);
+            File.Delete(StartupLinkPath);
             return;
         }
+
         var exe = Environment.ProcessPath
             ?? throw new InvalidOperationException("실행 파일 경로를 알 수 없습니다.");
-        key.SetValue(RunValueName, $"\"{exe}\" {Program.TrayArg}");
+        WriteShortcut(StartupLinkPath, exe);
+    }
+
+    /// 예전 등록이 남아 있으면 지운다. 두 경로가 같이 살아 있으면 로그온 때 두 번 뜬다.
+    static void RemoveLegacyRunEntry()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(LegacyRunKeyPath, writable: true);
+        key?.DeleteValue(LegacyRunValueName, throwOnMissingValue: false);
+    }
+
+    /// .lnk를 만들 수 있는 관리되는 API가 없어 셸의 COM 객체를 늦은 바인딩으로 쓴다.
+    static void WriteShortcut(string linkPath, string exe)
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")
+            ?? throw new InvalidOperationException("WScript.Shell을 찾지 못했습니다.");
+        var shell = Activator.CreateInstance(shellType)
+            ?? throw new InvalidOperationException("WScript.Shell을 만들지 못했습니다.");
+        try
+        {
+            var link = shellType.InvokeMember(
+                "CreateShortcut", BindingFlags.InvokeMethod, null, shell, [linkPath])!;
+            var linkType = link.GetType();
+            void Set(string name, object value) =>
+                linkType.InvokeMember(name, BindingFlags.SetProperty, null, link, [value]);
+
+            Set("TargetPath", exe);
+            Set("Arguments", Program.TrayArg);
+            Set("WorkingDirectory", Path.GetDirectoryName(exe)!);
+            Set("Description", $"{AppTitle} - 트레이 상주");
+            linkType.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(shell);
+        }
     }
 
     void SetRunning(bool running, string status)

@@ -35,6 +35,18 @@ sealed class GhPrRef
     public string HeadRefName { get; set; } = "";
 }
 
+/// 계정 전체에서 모아 본 열린 PR 하나.
+sealed class OpenPr(string repo, int number, string title, string url)
+{
+    public string Repo { get; } = repo;
+    public int Number { get; } = number;
+    public string Title { get; } = title;
+    public string Url { get; } = url;
+
+    /// CheckedListBox가 DisplayMember로 읽는다.
+    public string Display => $"{Repo.Split('/')[^1]} #{Number}  {Title}";
+}
+
 /// <summary>
 /// 파이프라인 본체. 레포 1개당 이슈 선택 → 동기화 → 브랜치 → claude → 변경 검사 → 커밋 → push → PR.
 /// 실패해도 브랜치는 남긴다(원인 추적용). 변경이 없으면 브랜치를 지우고 PR을 만들지 않는다.
@@ -265,6 +277,48 @@ sealed partial class Runner(Config cfg)
 
         var body = LinkIssue(pr.Body, issue?.Number);
         return await CreatePullRequestAsync(repo, dir, baseBranch, branch, pr.Title, body, ct);
+    }
+
+    /// <summary>
+    /// 계정이 소유한 모든 저장소의 열린 PR을 한 번에 모은다.
+    /// 검색 인덱스는 갱신이 늦어 방금 만든 PR이 빠지므로 GraphQL로 직접 훑는다.
+    /// </summary>
+    public static async Task<IReadOnlyList<OpenPr>> ListOpenPullRequestsAsync(CancellationToken ct)
+    {
+        const string query =
+            "{ viewer { repositories(first: 100, ownerAffiliations: OWNER) { nodes { nameWithOwner " +
+            "pullRequests(states: OPEN, first: 30) { nodes { number title url } } } } } }";
+
+        var result = await Proc.RunAsync("gh", ["api", "graphql", "-f", $"query={query}"],
+            Paths.Roaming, GhTimeout, ct);
+        if (!result.Ok) throw new InvalidOperationException($"PR 목록을 읽지 못했습니다: {result.Message}");
+
+        var found = new List<OpenPr>();
+        using var doc = JsonDocument.Parse(result.Stdout);
+        foreach (var repo in doc.RootElement
+                     .GetProperty("data").GetProperty("viewer")
+                     .GetProperty("repositories").GetProperty("nodes").EnumerateArray())
+        {
+            var name = repo.GetProperty("nameWithOwner").GetString() ?? "";
+            foreach (var pr in repo.GetProperty("pullRequests").GetProperty("nodes").EnumerateArray())
+            {
+                found.Add(new OpenPr(
+                    name,
+                    pr.GetProperty("number").GetInt32(),
+                    pr.GetProperty("title").GetString() ?? "",
+                    pr.GetProperty("url").GetString() ?? ""));
+            }
+        }
+        return found.OrderBy(p => p.Repo, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Number).ToList();
+    }
+
+    /// <summary>고른 PR 하나를 머지한다. 한 커밋짜리가 대부분이라 squash가 기본 브랜치를 깨끗하게 둔다.</summary>
+    public static async Task MergePullRequestAsync(OpenPr pr, CancellationToken ct)
+    {
+        var result = await Proc.RunAsync("gh",
+            ["pr", "merge", pr.Number.ToString(), "--repo", pr.Repo, "--squash", "--delete-branch"],
+            Paths.Roaming, GhTimeout, ct);
+        if (!result.Ok) throw new InvalidOperationException(result.Message);
     }
 
     /// <summary>

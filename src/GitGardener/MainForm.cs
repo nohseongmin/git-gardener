@@ -21,8 +21,6 @@ sealed class MainForm : Form
 
     /// 창 제목과 알림에 쓰는 표시 이름. 레지스트리 값 이름과 달리 사람이 읽는 쪽이다.
     const string AppTitle = "git gardener";
-    /// 계정 전체의 열린 PR을 한 화면에서 보는 GitHub 기본 대시보드.
-    const string OpenPrsUrlFormat = "https://github.com/pulls?q=is%3Apr+is%3Aopen+author%3A{0}";
 
     const int RepoPanelWidth = 240;
     const int SchedulerTickMs = 30_000;
@@ -72,12 +70,13 @@ sealed class MainForm : Form
     readonly Button _refresh = new() { Text = "레포 새로고침", AutoSize = true };
     readonly Button _run = new() { Text = "지금 1회 실행", AutoSize = true };
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
-    readonly Button _openPrs = new() { Text = "열린 PR 보기", AutoSize = true };
+    readonly Button _openPrs = new() { Text = "열린 PR", AutoSize = true };
     readonly Button _startup = new() { AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
     readonly NotifyIcon _tray = new() { Icon = SystemIcons.Application, Text = AppTitle, Visible = true };
     readonly System.Windows.Forms.Timer _scheduler = new() { Interval = SchedulerTickMs };
 
+    PullRequestsForm? _prs;
     RegisteredWaitHandle? _showWait;
     bool _startHidden;
     bool _reposLoaded;
@@ -163,7 +162,7 @@ sealed class MainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add("열기", null, (_, _) => ShowWindow());
         menu.Items.Add("지금 실행", null, (_, _) => Run(dryRun: false));
-        menu.Items.Add("열린 PR 보기", null, (_, _) => OpenPullRequests());
+        menu.Items.Add("열린 PR", null, (_, _) => OpenPullRequests());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => ExitApp());
         _tray.ContextMenuStrip = menu;
@@ -440,25 +439,17 @@ sealed class MainForm : Form
         }
     }
 
-    /// <summary>만든 PR을 확인하는 동선이 앱 밖에 있으면 쌓여도 모른다. 대시보드를 바로 연다.</summary>
+    /// <summary>만든 PR을 확인하는 동선이 앱 밖에 있으면 쌓여도 모른다. 목록을 앱 안에서 연다.</summary>
     void OpenPullRequests()
     {
-        if (_cfg.GithubUser.Length == 0)
+        if (_prs is null || _prs.IsDisposed)
         {
-            Log.Write("계정을 아직 모릅니다. 레포 목록을 먼저 새로고침하세요.");
-            return;
+            _prs = new PullRequestsForm();
+            _prs.FormClosed += (_, _) => _prs = null;
         }
-        var url = string.Format(OpenPrsUrlFormat, _cfg.GithubUser);
-        Log.Write($"열린 PR: {url}");
-        try
-        {
-            // 기본 브라우저로 넘기려면 셸을 거쳐야 한다.
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            Log.Write($"브라우저를 열지 못했습니다. 직접 여세요: {url}  ({ex.Message})");
-        }
+        _prs.Show(this);
+        _prs.WindowState = FormWindowState.Normal;
+        _prs.Activate();
     }
 
     void ShowWindow()

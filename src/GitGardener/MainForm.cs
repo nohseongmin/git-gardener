@@ -251,7 +251,9 @@ sealed class MainForm : Form
         try
         {
             Log.Write(dryRun ? "=== Dry-run 시작 ===" : "=== 실행 시작 ===");
-            var created = await runner.RunAsync(dryRun, _cts.Token);
+            // 스레드풀에서 돌린다. UI 스레드에서 그대로 await 하면 파이프라인의 모든 연속 실행이
+            // UI 스레드로 돌아와 메시지 펌프를 막고, 윈도우가 "응답 없음"으로 판정해 앱을 닫는다.
+            var created = await Task.Run(() => runner.RunAsync(dryRun, _cts.Token), _cts.Token);
             if (!dryRun)
             {
                 _cfg.LastRunDate = Today();

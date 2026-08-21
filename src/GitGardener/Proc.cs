@@ -23,6 +23,9 @@ static class Proc
     /// CreateProcess의 명령줄 상한은 32767자다. RULES.md 주입이 여기 걸릴 수 있어 미리 막는다.
     const int MaxCommandLineChars = 30000;
 
+    /// 프로세스를 죽인 뒤 남은 출력을 거둘 때까지 기다릴 시간.
+    static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
+
     public static async Task<ProcResult> RunAsync(
         string exe, IReadOnlyList<string> args, string workDir, TimeSpan timeout, CancellationToken ct)
     {
@@ -62,7 +65,9 @@ static class Proc
         catch (OperationCanceledException)
         {
             Kill(proc);
-            await Task.WhenAll(stdout, stderr);
+
+            // 죽인 자식이 손자에게 파이프를 물려줬으면 읽기가 끝나지 않는다. 기다려주되 무한정은 아니다.
+            await Task.WhenAny(Task.WhenAll(stdout, stderr), Task.Delay(DrainTimeout, CancellationToken.None));
             if (ct.IsCancellationRequested) throw;
             throw new TimeoutException(
                 $"{Path.GetFileName(exe)} 실행이 {timeout.TotalMinutes:0}분을 넘겨 중단했습니다.");

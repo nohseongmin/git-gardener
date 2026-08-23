@@ -15,7 +15,7 @@
 <p align="center">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="MIT"></a>
   <img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat" alt=".NET 9">
-  <img src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat" alt="NuGet 의존성 0">
+  <img src="https://img.shields.io/badge/requires-git%20%C2%B7%20gh%20%C2%B7%20claude-orange?style=flat" alt="git, gh, claude CLI 필요">
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat" alt="Windows">
 </p>
 
@@ -68,6 +68,27 @@
 이슈를 여는 것부터 PR이 올라가기까지 **49초.** 커밋 작성자에 봇 표시도, 본문에 "자동 생성됨" 푸터도 없다. 그 레포의 PR 템플릿을 읽어서 채우기 때문에 사람이 올린 PR과 같은 모양이 나온다.
 
 ## Install
+
+### 먼저, 이건 혼자 도는 프로그램이 아니다
+
+세 개의 외부 CLI를 부르는 껍데기다. 셋 다 없으면 한 줄도 못 돈다.
+
+| 필요한 것 | 왜 | 준비 |
+|---|---|---|
+| `git` | 클론·커밋·푸시 | `winget install Git.Git` + `user.name` / `user.email` 설정 |
+| [`gh`](https://cli.github.com/) | 레포·이슈·PR 조회와 생성 | `gh auth login` **+ `gh auth setup-git`** |
+| [`claude`](https://claude.com/claude-code) | 개선을 만드는 주체 | 설치 후 **대화형으로 띄워 `/login`** |
+
+`gh`와 `claude`는 **사람이 직접 로그인해야 한다.** 자동화할 수 없고, 이 앱이 대신 해주지도 않는다. 인증 정보는 각 CLI가 소유하고 앱은 손대지 않는다.
+
+확인:
+
+```bash
+gh auth status
+claude -p "reply with OK only" --output-format json   # is_error: false 여야 한다
+```
+
+설치 스크립트가 이 셋을 검사하고, 빠진 게 있으면 설치 명령을 알려주고 멈춘다.
 
 ### 실행 파일만 받아서 (권장)
 
@@ -217,7 +238,11 @@ Claude 헤드리스 실행  ← 코딩 규칙 + 그 레포의 PR 템플릿 주�
 
 ## 스택
 
-C# / .NET 9 / WinForms. **NuGet 의존성 0개**, 파일 5개. 외부 도구로 `git` · `gh` · `claude` CLI를 부른다.
+C# / .NET 9 / WinForms, 소스 6개 파일.
+
+NuGet 패키지는 쓰지 않는다. `System.Text.Json`, `NotifyIcon`, 레지스트리 접근이 전부 런타임에 들어 있어서 복원할 것이 없고, 자체 포함 단일 실행 파일로 나간다.
+
+다만 **패키지가 없다는 것과 의존성이 없다는 것은 다르다.** 이 앱이 하는 일의 대부분은 `git` · `gh` · `claude`를 부르는 것이고, 그중 둘은 사람이 로그인해둬야 동작한다. 무거운 쪽은 오히려 이쪽이다.
 
 ## License
 

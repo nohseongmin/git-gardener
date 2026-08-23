@@ -25,7 +25,9 @@ src/GitGardener/
   Runner.cs            # 파이프라인 본체
 ```
 
-**NuGet 의존성 0개.** `System.Text.Json`, `NotifyIcon`, `Microsoft.Win32.Registry` 전부 내장이다.
+**NuGet 패키지 0개.** `System.Text.Json`, `NotifyIcon`, `Microsoft.Win32.Registry` 전부 내장이다.
+
+패키지가 없다는 것이지 의존성이 없다는 뜻은 아니다. 이 앱은 `git` · `gh` · `claude`를 부르는 껍데기이고, 뒤의 둘은 사람이 로그인해둬야 한다. 그쪽이 훨씬 무거운 전제다.
 
 > **WinForms Designer를 쓰지 않는다.** 개발 환경에 Visual Studio가 없어서 `.Designer.cs` / `.resx`를 편집할 수단이 없다. UI는 전부 C# 코드로 구성해서 `dotnet` CLI만으로 완결되게 한다.
 

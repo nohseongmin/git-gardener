@@ -110,6 +110,18 @@ git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
+### 설치 위치를 고르고 싶다면
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -SourceExe .\GitGardener.exe -InstallDir "C:\GitGardener" -DesktopShortcut
+```
+
+`-InstallDir` 을 주면 그 자리에 넣고 자동 실행도 그 경로로 건다. `C:` 루트에도 관리자 권한 없이 만들어진다. `-DesktopShortcut` 을 붙이면 바탕화면 바로가기도 만든다.
+
+기본값이 `%LOCALAPPDATA%\GitGardener\bin` 인 이유는 그냥 권한 없이 쓸 수 있는 자리라서다. 취향대로 옮겨도 된다.
+
+설정과 로그, 작업 사본은 실행 파일을 어디에 두든 `%APPDATA%` 와 `%LOCALAPPDATA%` 에 남는다. 프로그램과 데이터는 따로 둔다.
+
 ### 설치 스크립트가 하는 일
 
 필요한 도구(`git` · [`gh`](https://cli.github.com/) 인증 · [`claude`](https://claude.com/claude-code) 로그인 · 빌드할 때만 .NET 9 SDK)를 확인하고, `%LOCALAPPDATA%\GitGardener\bin`에 넣고, 로그온 시 자동 실행을 걸고, 트레이에 띄운다.

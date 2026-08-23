@@ -21,7 +21,13 @@ param(
     [switch]$Uninstall,
 
     # 미리 받아둔 실행 파일을 쓰면 빌드를 건너뛴다. .NET SDK가 필요 없다.
-    [string]$SourceExe
+    [string]$SourceExe,
+
+    # 설치 위치. 비워두면 %LOCALAPPDATA%\GitGardener\bin 을 쓴다.
+    [string]$InstallDir,
+
+    # 바탕화면에도 바로가기를 만든다.
+    [switch]$DesktopShortcut
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +35,8 @@ $ErrorActionPreference = 'Stop'
 $AppName    = 'GitGardener'
 $LegacyRunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $StartupLink  = Join-Path ([Environment]::GetFolderPath('Startup')) "$AppName.lnk"
-$InstallDir = Join-Path $env:LOCALAPPDATA "$AppName\bin"
+$DesktopLink  = Join-Path ([Environment]::GetFolderPath('Desktop')) "git gardener.lnk"
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "$AppName\bin" }
 $ExePath    = Join-Path $InstallDir "$AppName.exe"
 $Root       = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -40,15 +47,20 @@ function Die  { param($m) Write-Host "`n$m" -ForegroundColor Red; exit 1 }
 # 로그온 시 자동 실행. HKCU Run 키는 로그온 때 실행되지 않는 경우가 있었고,
 # 예약 작업은 로그온 트리거라 관리자 권한을 요구한다.
 # 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
+function New-Shortcut {
+    param([string]$Path, [string]$Exe, [string]$Arguments)
+    $sh = New-Object -ComObject WScript.Shell
+    $s = $sh.CreateShortcut($Path)
+    $s.TargetPath = $Exe
+    $s.Arguments = $Arguments
+    $s.WorkingDirectory = Split-Path $Exe
+    $s.Description = 'git gardener'
+    $s.Save()
+}
+
 function Set-Startup {
     param([string]$Exe)
-    $sh = New-Object -ComObject WScript.Shell
-    $s = $sh.CreateShortcut($StartupLink)
-    $s.TargetPath = $Exe
-    $s.Arguments = '--tray'
-    $s.WorkingDirectory = Split-Path $Exe
-    $s.Description = 'git gardener - 트레이 상주'
-    $s.Save()
+    New-Shortcut -Path $StartupLink -Exe $Exe -Arguments '--tray'
 }
 
 # 예전 등록이 남아 있으면 지운다. 둘 다 살아 있으면 로그온 때 두 번 뜼다.
@@ -67,6 +79,7 @@ if ($Uninstall) {
     Stop-App
     Remove-LegacyRunEntry
     if (Test-Path $StartupLink) { Remove-Item $StartupLink -Force }
+    if (Test-Path $DesktopLink) { Remove-Item $DesktopLink -Force }
     Say '시작프로그램 등록 해제'
     if (Test-Path $InstallDir) {
         Remove-Item $InstallDir -Recurse -Force
@@ -149,6 +162,11 @@ if ($NoStartup) {
     Set-Startup -Exe $ExePath
     if (-not (Test-Path $StartupLink)) { Die '시작프로그램 등록에 실패했습니다.' }
     Say '시작프로그램 등록 완료'
+}
+
+if ($DesktopShortcut) {
+    New-Shortcut -Path $DesktopLink -Exe $ExePath -Arguments ''
+    Say "바탕화면 바로가기 생성"
 }
 
 Step '실행'

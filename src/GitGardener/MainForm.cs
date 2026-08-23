@@ -1,9 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Reflection;
-using System.Runtime.InteropServices;
 
-using Microsoft.Win32;
 
 namespace GitGardener;
 
@@ -13,13 +10,7 @@ namespace GitGardener;
 /// </summary>
 sealed class MainForm : Form
 {
-    /// 예전 방식. 로그온 때 조용히 씹히는 일이 있어 시작 폴더로 옮겼고, 남아 있으면 지운다.
-    const string LegacyRunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string LegacyRunValueName = "GitGardener";
-
-    const string StartupLinkName = "GitGardener.lnk";
-
-    /// 창 제목과 알림에 쓰는 표시 이름. 레지스트리 값 이름과 달리 사람이 읽는 쪽이다.
+    /// 창 제목과 알림에 쓰는 표시 이름.
     const string AppTitle = "git gardener";
 
     const int RepoPanelWidth = 240;
@@ -67,6 +58,8 @@ sealed class MainForm : Form
     readonly ComboBox _type = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     readonly ComboBox _model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
     readonly ComboBox _issueMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+    readonly Button _checkAll = new() { Text = "전부 체크", AutoSize = true };
+    readonly Button _uncheckAll = new() { Text = "전부 해제", AutoSize = true };
     readonly Button _refresh = new() { Text = "레포 새로고침", AutoSize = true };
     readonly Button _run = new() { Text = "지금 1회 실행", AutoSize = true };
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
@@ -74,7 +67,7 @@ sealed class MainForm : Form
     readonly Button _openPrs = new() { Text = "열린 PR", AutoSize = true };
     readonly Button _startup = new() { AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
-    readonly NotifyIcon _tray = new() { Icon = SystemIcons.Application, Text = AppTitle, Visible = true };
+    readonly NotifyIcon _tray = new() { Icon = Program.AppIcon, Text = AppTitle, Visible = true };
     readonly System.Windows.Forms.Timer _scheduler = new() { Interval = SchedulerTickMs };
 
     PullRequestsForm? _prs;
@@ -96,7 +89,7 @@ sealed class MainForm : Form
             showRequested, (_, _) => OnShowRequested(), null, Timeout.Infinite, executeOnlyOnce: false);
 
         Text = AppTitle;
-        Icon = SystemIcons.Application;
+        Icon = Program.AppIcon;
         // 설정 한 줄이 접히지 않을 만큼은 확보한다.
         MinimumSize = new Size(1010, 560);
         StartPosition = FormStartPosition.CenterScreen;
@@ -129,6 +122,8 @@ sealed class MainForm : Form
         _issueMode.Items.AddRange(IssueModes.Select(m => (object)m.Label).ToArray());
         _repos.DisplayMember = nameof(GhRepo.Display);
 
+        _checkAll.Click += (_, _) => SetAllChecked(true);
+        _uncheckAll.Click += (_, _) => SetAllChecked(false);
         _refresh.Click += (_, _) => RefreshRepos();
         _run.Click += (_, _) => Run(dryRun: false);
         _dryRun.Click += (_, _) => Run(dryRun: true);
@@ -148,8 +143,13 @@ sealed class MainForm : Form
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         buttons.Controls.AddRange([_refresh, _run, _dryRun, _stop, _openPrs, _startup, _status]);
 
+        var repoHeader = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true };
+        repoHeader.Controls.AddRange([
+            new Label { Text = "대상 레포", AutoSize = true, Padding = new Padding(0, 6, 8, 0) },
+            _checkAll, _uncheckAll,
+        ]);
         _split.Panel1.Controls.Add(_repos);
-        _split.Panel1.Controls.Add(new Label { Text = "대상 레포", Dock = DockStyle.Top, Height = 20 });
+        _split.Panel1.Controls.Add(repoHeader);
         _split.Panel2.Controls.Add(_log);
         _split.Panel2.Controls.Add(new Label { Text = "로그", Dock = DockStyle.Top, Height = 20 });
 
@@ -183,6 +183,15 @@ sealed class MainForm : Form
         _model.SelectedIndex = Math.Max(0, Array.IndexOf(Models, _cfg.Model));
         _issueMode.SelectedIndex = Math.Max(0, Array.FindIndex(IssueModes, m => m.Mode == _cfg.IssueMode));
         UpdateStartupButton();
+    }
+
+    /// <summary>목록 전체를 켜거나 끈다. 바로 저장해서 껐다 켜도 그대로 남게 한다.</summary>
+    void SetAllChecked(bool value)
+    {
+        if (_repos.Items.Count == 0) return;
+        for (var i = 0; i < _repos.Items.Count; i++) _repos.SetItemChecked(i, value);
+        SaveSettings();
+        Log.Write($"대상 레포 {_repos.CheckedItems.Count}개 선택됨");
     }
 
     void SaveSettings()
@@ -345,63 +354,20 @@ sealed class MainForm : Form
     void UpdateStartupButton() =>
         _startup.Text = IsRegisteredAtStartup() ? "시작프로그램 해제" : "시작프로그램 등록";
 
-    static string StartupLinkPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupLinkName);
+    static bool IsRegisteredAtStartup() => File.Exists(Shortcuts.StartupLink);
 
-    static bool IsRegisteredAtStartup() => File.Exists(StartupLinkPath);
-
-    /// <summary>
-    /// 시작 폴더에 바로가기를 둔다. HKCU Run 키는 로그온 때 실행되지 않는 경우가 있었고,
-    /// 예약 작업은 로그온 트리거라 관리자 권한을 요구해서 설치 과정에 넣을 수 없다.
-    /// 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
-    /// </summary>
+    /// <summary>시작 폴더 바로가기로 자동 실행을 건다. Run 키는 로그온 때 조용히 씹히는 일이 있었다.</summary>
     static void SetStartup(bool enabled)
     {
-        RemoveLegacyRunEntry();
-
+        Shortcuts.RemoveLegacyRunEntry();
         if (!enabled)
         {
-            File.Delete(StartupLinkPath);
+            File.Delete(Shortcuts.StartupLink);
             return;
         }
-
         var exe = Environment.ProcessPath
             ?? throw new InvalidOperationException("실행 파일 경로를 알 수 없습니다.");
-        WriteShortcut(StartupLinkPath, exe);
-    }
-
-    /// 예전 등록이 남아 있으면 지운다. 두 경로가 같이 살아 있으면 로그온 때 두 번 뜬다.
-    static void RemoveLegacyRunEntry()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(LegacyRunKeyPath, writable: true);
-        key?.DeleteValue(LegacyRunValueName, throwOnMissingValue: false);
-    }
-
-    /// .lnk를 만들 수 있는 관리되는 API가 없어 셸의 COM 객체를 늦은 바인딩으로 쓴다.
-    static void WriteShortcut(string linkPath, string exe)
-    {
-        var shellType = Type.GetTypeFromProgID("WScript.Shell")
-            ?? throw new InvalidOperationException("WScript.Shell을 찾지 못했습니다.");
-        var shell = Activator.CreateInstance(shellType)
-            ?? throw new InvalidOperationException("WScript.Shell을 만들지 못했습니다.");
-        try
-        {
-            var link = shellType.InvokeMember(
-                "CreateShortcut", BindingFlags.InvokeMethod, null, shell, [linkPath])!;
-            var linkType = link.GetType();
-            void Set(string name, object value) =>
-                linkType.InvokeMember(name, BindingFlags.SetProperty, null, link, [value]);
-
-            Set("TargetPath", exe);
-            Set("Arguments", Program.TrayArg);
-            Set("WorkingDirectory", Path.GetDirectoryName(exe)!);
-            Set("Description", $"{AppTitle} - 트레이 상주");
-            linkType.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(shell);
-        }
+        Shortcuts.Write(Shortcuts.StartupLink, exe, Program.TrayArg);
     }
 
     void SetRunning(bool running, string status)

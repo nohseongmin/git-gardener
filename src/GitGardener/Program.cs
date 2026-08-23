@@ -1,8 +1,19 @@
+using System.Diagnostics;
+
 namespace GitGardener;
 
 static class Program
 {
     public const string TrayArg = "--tray";
+
+    /// exe에 박아둔 아이콘. 창·트레이·바로가기가 모두 이걸 쓴다.
+    public static Icon AppIcon { get; } = LoadIcon();
+
+    static Icon LoadIcon()
+    {
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream("GitGardener.app.ico");
+        return stream is null ? SystemIcons.Application : new Icon(stream);
+    }
 
     const string SingleInstanceMutex = @"Local\GitGardener.SingleInstance";
     const string ShowWindowEvent = @"Local\GitGardener.ShowWindow";
@@ -30,6 +41,28 @@ static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write($"처리되지 않은 예외: {e.ExceptionObject}");
 
         var startHidden = args.Contains(TrayArg, StringComparer.OrdinalIgnoreCase);
-        Application.Run(new MainForm(Config.Load(), startHidden, showRequested));
+        var cfg = Config.Load();
+
+        // 받아서 처음 실행한 상태면 설치부터 안내한다. 자동 실행(--tray)은 설치된 자리에서만 걸리므로 건너뛴다.
+        if (!startHidden && !IsInstalled(cfg))
+        {
+            using var setup = new SetupForm();
+            if (setup.ShowDialog() != DialogResult.OK) return;
+
+            // 설치한 자리의 실행 파일로 넘긴다. 지금 도는 것은 받아둔 원본일 수 있다.
+            if (setup.InstalledExe is { } exe && !string.Equals(exe, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+                return;
+            }
+            cfg = Config.Load();
+        }
+
+        Application.Run(new MainForm(cfg, startHidden, showRequested));
     }
+
+    /// 설정에 적힌 자리에서 돌고 있어야 설치가 끝난 것으로 본다.
+    static bool IsInstalled(Config cfg) =>
+        cfg.InstallPath.Length > 0
+        && string.Equals(cfg.InstallPath, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
 }

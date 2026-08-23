@@ -632,7 +632,7 @@ sealed partial class Runner(Config cfg)
 
 
             자동 세션은 전용 설정 폴더를 씁니다. 아직 로그인하지 않았다면 아래를 한 번 실행하고 /login 하세요.
-              set CLAUDE_CONFIG_DIR={Paths.ClaudeConfig}
+              $env:CLAUDE_CONFIG_DIR = '{Paths.ClaudeConfig}'
               claude
             """;
     }

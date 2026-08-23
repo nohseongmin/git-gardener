@@ -16,6 +16,9 @@ static class Paths
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
 
     public static string ConfigFile => Path.Combine(Roaming, "config.json");
+
+    /// 직전 저장본. 설정이 깨졌을 때 여기서 되살린다.
+    public static string ConfigBackup => ConfigFile + ".bak";
     public static string LogDir => Path.Combine(Roaming, "log");
     public static string ReposDir => Path.Combine(Local, "repos");
     public static string RulesCache => Path.Combine(Local, "rules", "RULES.md");
@@ -109,6 +112,9 @@ sealed class Config
     /// 코딩 규칙을 받아올 "owner/repo". 비워두면 githubUser의 coding-rules 레포.
     public string RulesRepo { get; set; } = "";
 
+    /// 설치 마법사가 기록한다. 실행 파일이 여기서 돌고 있으면 설치가 끝난 상태로 본다.
+    public string InstallPath { get; set; } = "";
+
     /// 비워두면 PATH에서 자동 탐지한다. 네이티브 설치본을 쓸 때만 지정.
     public string ClaudePath { get; set; } = "";
 
@@ -125,26 +131,61 @@ sealed class Config
     public string ResolveRulesRepo() =>
         RulesRepo.Length > 0 ? RulesRepo : $"{GithubUser}/{DefaultRulesRepoName}";
 
+    /// <summary>
+    /// 설정을 읽는다. 본체가 깨져 있으면 직전 백업에서 되살린다.
+    ///
+    /// 빈 설정으로 시작하면 대상 레포 목록이 "첫 실행"으로 오인되어 전부 켜진 상태로 덮어써진다.
+    /// 골라둔 것이 소리 없이 사라지는 자리라 백업을 한 단계 둔다.
+    /// </summary>
     public static Config Load()
     {
-        if (!File.Exists(Paths.ConfigFile)) return new Config();
+        if (TryRead(Paths.ConfigFile, out var cfg)) return cfg;
+
+        if (File.Exists(Paths.ConfigFile))
+            Log.Write($"설정이 손상됐습니다: {Paths.ConfigFile}");
+
+        if (TryRead(Paths.ConfigBackup, out var restored))
+        {
+            Log.Write("직전 백업에서 설정을 되살렸습니다.");
+            return restored;
+        }
+
+        Log.Write("되살릴 백업이 없어 기본값으로 시작합니다.");
+        return new Config();
+    }
+
+    static bool TryRead(string path, out Config cfg)
+    {
+        cfg = new Config();
+        if (!File.Exists(path)) return false;
         try
         {
-            var cfg = JsonSerializer.Deserialize<Config>(File.ReadAllText(Paths.ConfigFile), JsonOpts) ?? new Config();
-            cfg.Validate();
-            return cfg;
+            var read = JsonSerializer.Deserialize<Config>(File.ReadAllText(path), JsonOpts);
+            if (read is null) return false;
+            read.Validate();
+            cfg = read;
+            return true;
         }
         catch (Exception ex) when (ex is JsonException or IOException)
         {
-            Log.Write($"설정을 읽지 못해 기본값으로 시작합니다: {ex.Message}");
-            return new Config();
+            return false;
         }
     }
 
+    /// <summary>
+    /// 임시 파일에 다 쓴 뒤 통째로 갈아끼운다. 쓰는 도중에 앱이 죽어도 반쪽짜리 파일이 남지 않고,
+    /// 직전 내용은 백업으로 밀려난다.
+    /// </summary>
     public void Save()
     {
         Directory.CreateDirectory(Paths.Roaming);
-        File.WriteAllText(Paths.ConfigFile, JsonSerializer.Serialize(this, JsonOpts));
+        var temp = Paths.ConfigFile + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(this, JsonOpts));
+
+        if (File.Exists(Paths.ConfigFile))
+            File.Replace(temp, Paths.ConfigFile, Paths.ConfigBackup);
+        else
+            File.Move(temp, Paths.ConfigFile);
     }
 
     /// 손으로 고친 config.json이 앱을 무너뜨리지 않게, 못 쓰는 값은 알리고 기본값으로 되돌린다.

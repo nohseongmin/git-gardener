@@ -69,105 +69,46 @@
 
 ## Install
 
-### 먼저, 이건 혼자 도는 프로그램이 아니다
+[Releases](https://github.com/nohseongmin/git-gardener/releases/latest)에서 `GitGardener.exe` 하나만 받아 실행한다. 설치 마법사가 뜬다.
 
-세 개의 외부 CLI를 부르는 껍데기다. 셋 다 없으면 한 줄도 못 돈다.
+받은 파일이 "안전하지 않은 앱"으로 막히면 `Unblock-File .\GitGardener.exe` 로 다운로드 표식만 떼면 된다. 파일 속성 창의 "차단 해제" 체크와 같다.
 
-| 필요한 것 | 왜 | 준비 |
-|---|---|---|
-| `git` | 클론·커밋·푸시 | `winget install Git.Git` + `user.name` / `user.email` 설정 |
-| [`gh`](https://cli.github.com/) | 레포·이슈·PR 조회와 생성 | `gh auth login` **+ `gh auth setup-git`** |
-| [`claude`](https://claude.com/claude-code) | 개선을 만드는 주체 | 설치 후 **대화형으로 띄워 `/login`** |
+### 마법사가 하는 일
 
-`gh`와 `claude`는 **사람이 직접 로그인해야 한다.** 자동화할 수 없고, 이 앱이 대신 해주지도 않는다. 인증 정보는 각 CLI가 소유하고 앱은 손대지 않는다.
+**1. 고지** — 내 계정으로 이슈와 PR이 올라간다는 것, 요금이 드는 Claude Code 계정이 필요하다는 것, 만들어진 코드가 검증되지 않았다는 것. 동의해야 넘어간다.
 
-확인:
+**2. 검사** — 아래 일곱 가지를 실제로 실행해 확인한다.
 
-```bash
-gh auth status
-claude -p "reply with OK only" --output-format json   # is_error: false 여야 한다
-```
+| 항목 | 빠졌을 때 |
+|---|---|
+| `git` | `winget install Git.Git` |
+| git 커밋 작성자 | `user.name` / `user.email` 설정 |
+| [`gh`](https://cli.github.com/) | `winget install --id GitHub.cli -e` |
+| gh 로그인 | `gh auth login` |
+| git 자격증명 헬퍼 | `gh auth setup-git` — 없으면 자동 push가 인증창에서 멈춘다 |
+| [`claude`](https://claude.com/claude-code) | `npm i -g @anthropic-ai/claude-code` |
+| claude 로그인 (자동 세션 전용) | **[claude 로그인 창 열기]** 버튼 |
 
-설치 스크립트가 이 셋을 검사하고, 빠진 게 있으면 설치 명령을 알려주고 멈춘다.
+**빠진 것을 대신 설치하지는 않는다.** 내 PC에 무엇이 깔릴지는 쓰는 사람이 정할 몫이라, 무엇이 없는지와 어떤 명령을 치면 되는지까지만 보여주고 다시 검사한다. 항목을 누르면 명령이 복사된다.
 
-### 실행 파일만 받아서 (권장)
+**3. 설치** — 기본값은 `C:\GitGardener` + 바탕화면 바로가기 + 로그온 자동 실행. 위치는 바꿀 수 있다.
 
-[Releases](https://github.com/nohseongmin/git-gardener/releases/latest)에서 `GitGardener.exe`를 받는다. .NET SDK가 필요 없다.
+설정과 로그, 작업 사본은 실행 파일을 어디에 두든 사용자 폴더에 남는다. 프로그램과 데이터는 따로 둔다.
 
-받은 자리에서 그냥 실행해도 되지만, 로그온마다 자동으로 뜨게 하려면 같이 받은 `install.ps1`에 넘긴다.
+### 자동 세션용 claude 로그인
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -SourceExe .\GitGardener.exe
-```
-
-### 소스에서 빌드해서
-
-```bash
-git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-### 설치 위치를 고르고 싶다면
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -SourceExe .\GitGardener.exe -InstallDir "C:\GitGardener" -DesktopShortcut
-```
-
-`-InstallDir` 을 주면 그 자리에 넣고 자동 실행도 그 경로로 건다. `C:` 루트에도 관리자 권한 없이 만들어진다. `-DesktopShortcut` 을 붙이면 바탕화면 바로가기도 만든다.
-
-기본값이 `%LOCALAPPDATA%\GitGardener\bin` 인 이유는 그냥 권한 없이 쓸 수 있는 자리라서다. 취향대로 옮겨도 된다.
-
-설정과 로그, 작업 사본은 실행 파일을 어디에 두든 `%APPDATA%` 와 `%LOCALAPPDATA%` 에 남는다. 프로그램과 데이터는 따로 둔다.
-
-### 설치 스크립트가 하는 일
-
-필요한 도구(`git` · [`gh`](https://cli.github.com/) 인증 · [`claude`](https://claude.com/claude-code) 로그인 · 빌드할 때만 .NET 9 SDK)를 확인하고, `%LOCALAPPDATA%\GitGardener\bin`에 넣고, 로그온 시 자동 실행을 걸고, 트레이에 띄운다.
-
-`-NoStartup`이면 자동 실행을 건너뛰고, `-Uninstall`이면 되돌린다. 설정과 로그는 남는다.
-
-그다음은 트레이 아이콘을 더블클릭해 대상 레포를 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다.
-
-### 자동 세션용 claude 로그인 (한 번만)
-
-자동 세션은 **사용자의 `~/.claude` 와 따로 노는 전용 설정 폴더**를 쓴다. 그래서 거기에 한 번 로그인해줘야 한다.
-
-```powershell
-$env:CLAUDE_CONFIG_DIR = "$env:LOCALAPPDATA\GitGardener\claude"
-claude          # 떠 있는 창에서 /login
-```
+검사 화면의 **[claude 로그인 창 열기]** 를 누르면 환경 변수가 이미 잡힌 PowerShell 창이 열리고 claude가 떠 있다. `/login` 만 입력하면 된다.
 
 <details>
-<summary><strong>왜 따로 쓰나 — 안 그러면 쓰던 Claude Code 가 401 을 맞는다</strong></summary>
+<summary><strong>왜 따로 로그인하나 — 안 그러면 쓰던 Claude Code 가 401 을 맞는다</strong></summary>
 
 Claude Code 는 OAuth 토큰을 `~/.claude/.credentials.json` 에 두고 만료되면 갱신한다. 갱신은 옛 토큰을 무효로 만들고 파일을 덮어쓴다.
 
-자동 세션이 같은 파일을 쓰면 이 갱신이 사용자 몫의 토큰까지 갈아치운다. 대화형 Claude Code 는 메모리에 옛 토큰을 들고 있으므로, 그다음 요청에서 `API Error 401` 을 맞는다. 자동 실행이 도는 동안 쓰던 창이 죽는 것이다.
+자동 세션이 같은 파일을 쓰면 이 갱신이 사용자 몫의 토큰까지 갈아치운다. 대화형 Claude Code 는 메모리에 옛 토큰을 들고 있으므로 그다음 요청에서 `API Error 401` 을 맞는다. 자동 실행이 도는 동안 쓰던 창이 죽는 것이다.
 
-실제로 자동 실행 시작 3초 뒤에 자격증명 파일이 다시 쓰이는 것을 확인했다. 저장소를 나눠 갖는 것으로 끊는다.
+자동 실행 시작 3초 뒤에 자격증명 파일이 다시 쓰이는 것을 확인했다. `CLAUDE_CONFIG_DIR` 로 저장소를 나눠 갖는 것으로 끊었고, 그래서 전용 폴더에 한 번 로그인해야 한다.
 
 같이 쓰고 싶으면 `config.json` 의 `separateClaudeConfig` 를 `false` 로 두면 된다. 401 은 감수해야 한다.
-
-</details>
-
-<details>
-<summary><strong>"안전하지 않은 앱" 경고가 뜬다면</strong></summary>
-
-실행 파일에 코드 서명이 없다. 인증서는 발급 비용이 들고 개인에게는 발급 조건도 까다로워서 붙이지 않았다.
-
-경고 자체는 서명보다 **Mark of the Web** 때문에 뜬다. 인터넷에서 받은 파일에 Windows가 붙이는 표식이고, SmartScreen이 그걸 보고 평판을 조회한 뒤 알려진 파일이 아니면 막는다. 설치 스크립트가 이 표식을 떼므로 스크립트로 설치하면 경고를 보지 않는다.
-
-받은 실행 파일을 직접 실행하고 싶으면 표식만 떼면 된다.
-
-```powershell
-Unblock-File .\GitGardener.exe
-```
-
-파일 속성 창에서 아래쪽 "차단 해제"를 체크해도 같다.
-
-소스에서 빌드하면 애초에 이 표식이 붙지 않아 경고가 없다.
 
 </details>
 
@@ -176,26 +117,22 @@ Unblock-File .\GitGardener.exe
 
 `HKCU\...\Run` 키를 쓰다가 옮겼다. 등록도 되어 있고 사용 안 함 플래그도 없는데 로그온 때 실행되지 않는 일이 있었다. 탐색기는 정상 시작했고 실행 파일도 멀쩡한데 프로세스만 뜨지 않았다.
 
-예약 작업(`schtasks /SC ONLOGON`)은 관리자 권한을 요구해서 설치 과정에 넣을 수 없다. 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다.
-
-```
-%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\GitGardener.lnk
-```
-
-설치 스크립트와 앱 모두 예전 Run 키 항목이 남아 있으면 지운다. 둘 다 살아 있으면 로그온 때 두 번 뜬다.
+예약 작업(`schtasks /SC ONLOGON`)은 관리자 권한을 요구해서 설치 과정에 넣을 수 없다. 시작 폴더는 권한 없이 되고 탐색기가 로그온마다 처리한다. 예전 Run 키 항목이 남아 있으면 지운다. 둘 다 살아 있으면 로그온 때 두 번 뜬다.
 
 </details>
 
 <details>
-<summary><strong>헤드리스 push가 인증창에서 멈춘다면</strong></summary>
-
-Windows Git은 시스템 레벨에 Git Credential Manager만 깔아둔다. 트레이에서 도는 `git push`가 GUI 인증창을 띄우고 타임아웃까지 멈춘다.
+<summary><strong>소스에서 빌드하려면</strong></summary>
 
 ```bash
-gh auth setup-git --hostname github.com
+git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 ```
 
-`git config --global --get-regexp credential`에 `gh.exe auth git-credential`이 보이면 된다. 커밋 작성자(`user.name` / `user.email`)도 설정돼 있어야 한다.
+```powershell
+dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+```
+
+나온 실행 파일을 그냥 실행하면 같은 마법사가 뜬다. 소스에서 빌드한 파일에는 다운로드 표식이 없어 경고도 없다.
 
 </details>
 

@@ -30,7 +30,7 @@ sealed class PullRequestsForm : Form
     public PullRequestsForm()
     {
         Text = "열린 PR";
-        Icon = SystemIcons.Application;
+        Icon = Program.AppIcon;
         MinimumSize = new Size(760, 460);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;

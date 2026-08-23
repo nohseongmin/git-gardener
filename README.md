@@ -98,6 +98,25 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 그다음은 트레이 아이콘을 더블클릭해 대상 레포를 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다.
 
 <details>
+<summary><strong>"안전하지 않은 앱" 경고가 뜬다면</strong></summary>
+
+실행 파일에 코드 서명이 없다. 인증서는 발급 비용이 들고 개인에게는 발급 조건도 까다로워서 붙이지 않았다.
+
+경고 자체는 서명보다 **Mark of the Web** 때문에 뜬다. 인터넷에서 받은 파일에 Windows가 붙이는 표식이고, SmartScreen이 그걸 보고 평판을 조회한 뒤 알려진 파일이 아니면 막는다. 설치 스크립트가 이 표식을 떼므로 스크립트로 설치하면 경고를 보지 않는다.
+
+받은 실행 파일을 직접 실행하고 싶으면 표식만 떼면 된다.
+
+```powershell
+Unblock-File .\GitGardener.exe
+```
+
+파일 속성 창에서 아래쪽 "차단 해제"를 체크해도 같다.
+
+소스에서 빌드하면 애초에 이 표식이 붙지 않아 경고가 없다.
+
+</details>
+
+<details>
 <summary><strong>자동 실행에 시작 폴더를 쓰는 이유</strong></summary>
 
 `HKCU\...\Run` 키를 쓰다가 옮겼다. 등록도 되어 있고 사용 안 함 플래그도 없는데 로그온 때 실행되지 않는 일이 있었다. 탐색기는 정상 시작했고 실행 파일도 멀쩡한데 프로세스만 뜨지 않았다.

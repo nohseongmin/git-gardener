@@ -80,6 +80,10 @@ if ($Uninstall) {
 if ($SourceExe) {
     if (-not (Test-Path $SourceExe)) { Die "지정한 실행 파일이 없습니다: $SourceExe" }
     $SourceExe = (Resolve-Path $SourceExe).Path
+
+    # 인터넷에서 받은 파일에는 Windows가 Mark of the Web를 붙이고,
+    # SmartScreen이 그걸 보고 "안전하지 않음"을 띄운다. 내가 고른 파일이므로 표식만 뚜다.
+    Unblock-File -Path $SourceExe -ErrorAction SilentlyContinue
 }
 
 Step '필요한 도구 확인'
@@ -135,6 +139,7 @@ Step '설치'
 Stop-App
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item $built $ExePath -Force
+Unblock-File -Path $ExePath -ErrorAction SilentlyContinue
 Say ('{0}  ({1:N0} MB)' -f $ExePath, ((Get-Item $ExePath).Length / 1MB))
 
 Remove-LegacyRunEntry

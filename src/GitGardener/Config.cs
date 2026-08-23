@@ -115,6 +115,9 @@ sealed class Config
     /// 설치 마법사가 기록한다. 실행 파일이 여기서 돌고 있으면 설치가 끝난 상태로 본다.
     public string InstallPath { get; set; } = "";
 
+    /// 자기 자신은 실행 중이라 못 지운다. 다음 실행 때 치우도록 남겨둔다.
+    public string PendingCleanup { get; set; } = "";
+
     /// 비워두면 PATH에서 자동 탐지한다. 네이티브 설치본을 쓸 때만 지정.
     public string ClaudePath { get; set; } = "";
 

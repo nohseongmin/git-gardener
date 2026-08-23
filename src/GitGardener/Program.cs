@@ -42,6 +42,7 @@ static class Program
 
         var startHidden = args.Contains(TrayArg, StringComparer.OrdinalIgnoreCase);
         var cfg = Config.Load();
+        CleanUpPending(cfg);
 
         // 받아서 처음 실행한 상태면 설치부터 안내한다. 자동 실행(--tray)은 설치된 자리에서만 걸리므로 건너뛴다.
         if (!startHidden && !IsInstalled(cfg))
@@ -59,6 +60,28 @@ static class Program
         }
 
         Application.Run(new MainForm(cfg, startHidden, showRequested));
+    }
+
+    /// <summary>설치할 때 자기 자신이라 못 지웠던 이전 복사본을 치운다.</summary>
+    static void CleanUpPending(Config cfg)
+    {
+        if (cfg.PendingCleanup.Length == 0) return;
+        if (string.Equals(cfg.PendingCleanup, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            if (File.Exists(cfg.PendingCleanup))
+            {
+                File.Delete(cfg.PendingCleanup);
+                Log.Write($"이전 설치본을 지웠습니다: {cfg.PendingCleanup}");
+            }
+            cfg.PendingCleanup = "";
+            cfg.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Write($"이전 설치본을 아직 지우지 못했습니다: {ex.Message}");
+        }
     }
 
     /// 설정에 적힌 자리에서 돌고 있어야 설치가 끝난 것으로 본다.

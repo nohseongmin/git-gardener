@@ -71,6 +71,77 @@ static class ClaudeLogin
     }
 }
 
+/// <summary>이전 설치본을 치운다. 남겨두면 그쪽을 실행했을 때 옛 버전이 도는 것처럼 보인다.</summary>
+static class OldInstall
+{
+    /// 예전 기본 위치. 여기에 두던 시절의 복사본이 남아 있을 수 있다.
+    static string LegacyExe =>
+        Path.Combine(Paths.Local, "bin", "GitGardener.exe");
+
+    /// <summary>파일을 잠그고 있는 인스턴스를 끊는다. 실행 중이면 덮어쓰지도 지우지도 못한다.</summary>
+    public static void StopRunning()
+    {
+        var self = Environment.ProcessId;
+        foreach (var p in Process.GetProcessesByName("GitGardener"))
+        {
+            using (p)
+            {
+                if (p.Id == self) continue;
+                try
+                {
+                    p.Kill(entireProcessTree: true);
+                    p.WaitForExit(5000);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // 이미 끝났거나 손댈 수 없다. 지우기를 시도해보면 어차피 드러난다.
+                }
+            }
+        }
+    }
+
+    /// <returns>지금 지우지 못해 다음 실행으로 미룬 경로. 없으면 빈 문자열.</returns>
+    public static string RemoveExcept(string keep, params string[] candidates)
+    {
+        var pending = "";
+        foreach (var path in candidates.Append(LegacyExe).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (path.Length == 0) continue;
+            if (string.Equals(path, keep, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!File.Exists(path)) continue;
+
+            try
+            {
+                File.Delete(path);
+                Log.Write($"이전 설치본을 지웠습니다: {path}");
+                RemoveEmptyFolder(Path.GetDirectoryName(path));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 대개 지금 이 프로세스가 그 파일이다. 다음 실행 때 치운다.
+                pending = path;
+                Log.Write($"지금은 지우지 못해 다음 실행으로 미룹니다: {path}");
+            }
+        }
+        return pending;
+    }
+
+    /// 데이터 폴더는 건드리지 않는다. 실행 파일만 있던 빈 폴더만 치운다.
+    static void RemoveEmptyFolder(string? dir)
+    {
+        if (dir is null || !Directory.Exists(dir)) return;
+        try
+        {
+            if (Directory.EnumerateFileSystemEntries(dir).Any()) return;
+            Directory.Delete(dir);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 남아도 해가 없다.
+        }
+    }
+}
+
 /// <summary>필요한 도구 하나. 실제로 명령을 돌려 확인하고, 안 되면 무엇을 치면 되는지 알려준다.</summary>
 sealed record Requirement(string Name, string Fix, Func<CancellationToken, Task<string?>> Check);
 
@@ -439,6 +510,11 @@ sealed class SetupForm : Form
             var source = Environment.ProcessPath
                 ?? throw new InvalidOperationException("실행 파일 경로를 알 수 없습니다.");
             var target = Path.Combine(_dir.Text.Trim(), "GitGardener.exe");
+            var previous = Config.Load().InstallPath;
+
+            // 실행 중이면 덮어쓰지도 지우지도 못한다. 뮤텍스 때문에 옛 인스턴스가 남아 있으면
+            // 새로 띄운 쪽이 그 창만 보여주고 끝나서, 옛 버전이 도는 것처럼 보인다.
+            OldInstall.StopRunning();
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             if (!string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
@@ -453,6 +529,7 @@ sealed class SetupForm : Form
 
             var cfg = Config.Load();
             cfg.InstallPath = target;
+            cfg.PendingCleanup = OldInstall.RemoveExcept(target, previous, source);
             cfg.Save();
 
             InstalledExe = target;

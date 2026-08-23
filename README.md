@@ -206,6 +206,7 @@ gh auth setup-git --hostname github.com
 - **작업 사본에서만 돈다.** 개발 중인 로컬 폴더는 손대지 않고 `%LOCALAPPDATA%\GitGardener\repos\`의 별도 사본에서만 작업한다.
 - **셸을 주지 않는다.** 자동 세션에는 파일 편집 도구만 허용하고 Bash는 차단한다. git과 PR 조작은 전부 앱이 한다.
 - **Dry-run은 아무것도 만들지 않는다.** 편집과 diff까지만 보여주고 이슈도 PR도 건드리지 않는다.
+- **언제든 멈출 수 있다.** 도는 중에 `중단`을 누르면 진행 중인 claude 프로세스까지 정리하고 끊는다. 창을 안 열었으면 트레이 메뉴에도 있다.
 
 <details>
 <summary><strong>주입되는 코딩 규칙</strong></summary>

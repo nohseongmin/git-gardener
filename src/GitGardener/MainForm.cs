@@ -70,6 +70,7 @@ sealed class MainForm : Form
     readonly Button _refresh = new() { Text = "레포 새로고침", AutoSize = true };
     readonly Button _run = new() { Text = "지금 1회 실행", AutoSize = true };
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
+    readonly Button _stop = new() { Text = "중단", AutoSize = true, Enabled = false };
     readonly Button _openPrs = new() { Text = "열린 PR", AutoSize = true };
     readonly Button _startup = new() { AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
@@ -77,6 +78,7 @@ sealed class MainForm : Form
     readonly System.Windows.Forms.Timer _scheduler = new() { Interval = SchedulerTickMs };
 
     PullRequestsForm? _prs;
+    CancellationTokenSource? _runCts;
     RegisteredWaitHandle? _showWait;
     bool _startHidden;
     bool _reposLoaded;
@@ -130,6 +132,7 @@ sealed class MainForm : Form
         _refresh.Click += (_, _) => RefreshRepos();
         _run.Click += (_, _) => Run(dryRun: false);
         _dryRun.Click += (_, _) => Run(dryRun: true);
+        _stop.Click += (_, _) => StopRun();
         _openPrs.Click += (_, _) => OpenPullRequests();
         _startup.Click += (_, _) => ToggleStartup();
 
@@ -143,7 +146,7 @@ sealed class MainForm : Form
         ]);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        buttons.Controls.AddRange([_refresh, _run, _dryRun, _openPrs, _startup, _status]);
+        buttons.Controls.AddRange([_refresh, _run, _dryRun, _stop, _openPrs, _startup, _status]);
 
         _split.Panel1.Controls.Add(_repos);
         _split.Panel1.Controls.Add(new Label { Text = "대상 레포", Dock = DockStyle.Top, Height = 20 });
@@ -162,6 +165,7 @@ sealed class MainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add("열기", null, (_, _) => ShowWindow());
         menu.Items.Add("지금 실행", null, (_, _) => Run(dryRun: false));
+        menu.Items.Add("중단", null, (_, _) => StopRun());
         menu.Items.Add("열린 PR", null, (_, _) => OpenPullRequests());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => ExitApp());
@@ -235,8 +239,18 @@ sealed class MainForm : Form
         }
         finally
         {
+            _runCts = null;
             SetRunning(false, "");
         }
+    }
+
+    /// <summary>도는 중인 작업을 끊는다. 진행 중인 claude 프로세스도 함께 정리된다.</summary>
+    void StopRun()
+    {
+        if (_runCts is null) return;
+        Log.Write("중단 요청 — 진행 중인 단계가 끝나는 대로 멈춥니다.");
+        _runCts.Cancel();
+        _status.Text = "중단하는 중";
     }
 
     async void Run(bool dryRun)
@@ -247,12 +261,16 @@ sealed class MainForm : Form
 
         var runner = new Runner(_cfg);
         runner.Notify += Balloon;
+
+        // 앱 수명 토큰과 나눠 둔다. 한 번 중단했다고 다음 실행까지 막히면 안 된다.
+        using var run = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _runCts = run;
         try
         {
             Log.Write(dryRun ? "=== Dry-run 시작 ===" : "=== 실행 시작 ===");
             // 스레드풀에서 돌린다. UI 스레드에서 그대로 await 하면 파이프라인의 모든 연속 실행이
             // UI 스레드로 돌아와 메시지 펌프를 막고, 윈도우가 "응답 없음"으로 판정해 앱을 닫는다.
-            var created = await Task.Run(() => runner.RunAsync(dryRun, _cts.Token), _cts.Token);
+            var created = await Task.Run(() => runner.RunAsync(dryRun, run.Token), run.Token);
             if (!dryRun)
             {
                 _cfg.LastRunDate = Today();
@@ -262,7 +280,9 @@ sealed class MainForm : Form
         }
         catch (OperationCanceledException)
         {
-            Log.Write("=== 취소됨 ===");
+            // 사람이 멈춘 것이므로 곧바로 다시 걸지 않는다.
+            _nextAttempt = DateTime.Now.AddMinutes(RetryCooldownMinutes);
+            Log.Write($"=== 중단됨 (재시도 {RetryCooldownMinutes}분 후) ===");
         }
         catch (Exception ex)
         {
@@ -389,6 +409,7 @@ sealed class MainForm : Form
         _running = running;
         _status.Text = status;
         foreach (var button in new[] { _refresh, _run, _dryRun }) button.Enabled = !running;
+        _stop.Enabled = running;
         Cursor = running ? Cursors.AppStarting : Cursors.Default;
     }
 

@@ -118,6 +118,28 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 그다음은 트레이 아이콘을 더블클릭해 대상 레포를 고르고 **Dry-run** 먼저 — 자동 push가 붙어 있어서 `지금 1회 실행`은 진짜로 이슈와 PR을 만든다.
 
+### 자동 세션용 claude 로그인 (한 번만)
+
+자동 세션은 **사용자의 `~/.claude` 와 따로 노는 전용 설정 폴더**를 쓴다. 그래서 거기에 한 번 로그인해줘야 한다.
+
+```powershell
+$env:CLAUDE_CONFIG_DIR = "$env:LOCALAPPDATA\GitGardener\claude"
+claude          # 떠 있는 창에서 /login
+```
+
+<details>
+<summary><strong>왜 따로 쓰나 — 안 그러면 쓰던 Claude Code 가 401 을 맞는다</strong></summary>
+
+Claude Code 는 OAuth 토큰을 `~/.claude/.credentials.json` 에 두고 만료되면 갱신한다. 갱신은 옛 토큰을 무효로 만들고 파일을 덮어쓴다.
+
+자동 세션이 같은 파일을 쓰면 이 갱신이 사용자 몫의 토큰까지 갈아치운다. 대화형 Claude Code 는 메모리에 옛 토큰을 들고 있으므로, 그다음 요청에서 `API Error 401` 을 맞는다. 자동 실행이 도는 동안 쓰던 창이 죽는 것이다.
+
+실제로 자동 실행 시작 3초 뒤에 자격증명 파일이 다시 쓰이는 것을 확인했다. 저장소를 나눠 갖는 것으로 끊는다.
+
+같이 쓰고 싶으면 `config.json` 의 `separateClaudeConfig` 를 `false` 로 두면 된다. 401 은 감수해야 한다.
+
+</details>
+
 <details>
 <summary><strong>"안전하지 않은 앱" 경고가 뜬다면</strong></summary>
 

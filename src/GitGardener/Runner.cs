@@ -124,6 +124,19 @@ sealed partial class Runner(Config cfg)
     [GeneratedRegex(@"^\s*(>\s*)?-\s*#\s*$")]
     private static partial Regex EmptyIssueRef { get; }
 
+    /// <summary>
+    /// claude 자식 프로세스에 줄 환경변수.
+    ///
+    /// 사용자의 ~/.claude 를 그대로 쓰면 자동 세션이 OAuth 토큰을 갱신하면서 자격증명 파일을
+    /// 덮어쓰고, 옛 토큰을 들고 있던 대화형 Claude Code 가 401 을 맞는다. 저장소를 나눠 갖는다.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? ClaudeEnv()
+    {
+        if (!cfg.SeparateClaudeConfig) return null;
+        Directory.CreateDirectory(Paths.ClaudeConfig);
+        return new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = Paths.ClaudeConfig };
+    }
+
     /// 제목, 본문. 트레이 풍선으로 띄운다.
     public event Action<string, string>? Notify;
 
@@ -440,14 +453,17 @@ sealed partial class Runner(Config cfg)
             "--model", cfg.Model,
         ];
 
-        var result = await Proc.RunAsync(launcher.Exe, args, dir, ClaudeTimeout, ct);
+        var result = await Proc.RunAsync(launcher.Exe, args, dir, ClaudeTimeout, ct, ClaudeEnv());
 
         // 실패해도 응답 JSON에 사람이 읽을 이유가 들어 있다("...Please run /login." 등).
         // 원문 JSON을 그대로 뱉지 말고 그 문장을 꺼내 보여준다.
         var (text, failed) = ParseResult(result.Stdout);
         if (!result.Ok || failed)
+        {
+            var reason = text.Length > 0 ? text : result.Message;
             throw new InvalidOperationException(
-                $"claude 실행 실패 (exit {result.ExitCode}): {(text.Length > 0 ? text : result.Message)}");
+                $"claude 실행 실패 (exit {result.ExitCode}): {reason}{LoginHint()}");
+        }
         return text;
     }
 
@@ -528,7 +544,7 @@ sealed partial class Runner(Config cfg)
     {
         var launcher = Proc.ResolveClaude(cfg.ClaudePath);
         var result = await Proc.RunAsync(
-            launcher.Exe, [.. launcher.Prefix, "--version"], Paths.Roaming, GhTimeout, ct);
+            launcher.Exe, [.. launcher.Prefix, "--version"], Paths.Roaming, GhTimeout, ct, ClaudeEnv());
         if (!result.Ok)
             throw new InvalidOperationException($"claude를 실행하지 못했습니다: {result.Message}");
         return result.Stdout.Trim();
@@ -606,6 +622,20 @@ sealed partial class Runner(Config cfg)
             이슈가 한 번에 끝낼 수 없을 만큼 크면, 그중 독립적으로 의미 있는 한 조각만 처리하고
             무엇을 남겼는지 PR 본문에 적어라.
             """;
+
+    /// 전용 설정 폴더는 따로 로그인해야 한다. 실패했을 때 무엇을 하라는 건지 바로 알 수 있게 붙인다.
+    string LoginHint()
+    {
+        if (!cfg.SeparateClaudeConfig) return "";
+
+        return $"""
+
+
+            자동 세션은 전용 설정 폴더를 씁니다. 아직 로그인하지 않았다면 아래를 한 번 실행하고 /login 하세요.
+              set CLAUDE_CONFIG_DIR={Paths.ClaudeConfig}
+              claude
+            """;
+    }
 
     /// claude --output-format json 응답에서 result 텍스트와 오류 여부를 뽑는다.
     static (string Text, bool Failed) ParseResult(string json)

@@ -20,6 +20,9 @@ static class Paths
     public static string ReposDir => Path.Combine(Local, "repos");
     public static string RulesCache => Path.Combine(Local, "rules", "RULES.md");
 
+    /// 자동 세션 전용 claude 설정 폴더. 사용자의 ~/.claude 와 자격증명을 나눠 갖기 위한 것이다.
+    public static string ClaudeConfig => Path.Combine(Local, "claude");
+
     /// ponytail은 Windows에서 플러그인 설치가 실패하므로(SETUP.md) 마켓플레이스 클론에서 직접 읽는다.
     public static string PonytailRules { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -108,6 +111,12 @@ sealed class Config
 
     /// 비워두면 PATH에서 자동 탐지한다. 네이티브 설치본을 쓸 때만 지정.
     public string ClaudePath { get; set; } = "";
+
+    /// <summary>
+    /// 자동 세션이 사용자의 ~/.claude 를 그대로 쓰면 토큰 갱신이 서로를 무효화해서
+    /// 대화형 Claude Code 가 401 을 맞는다. 끄면 예전처럼 같이 쓴다.
+    /// </summary>
+    public bool SeparateClaudeConfig { get; set; } = true;
 
     /// scheduleTime에서 계산한다. 파일에 나가면 고쳐도 안 먹히는 항목이 보여 헷갈린다.
     [JsonIgnore]

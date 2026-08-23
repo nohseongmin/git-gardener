@@ -27,7 +27,8 @@ static class Proc
     static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
 
     public static async Task<ProcResult> RunAsync(
-        string exe, IReadOnlyList<string> args, string workDir, TimeSpan timeout, CancellationToken ct)
+        string exe, IReadOnlyList<string> args, string workDir, TimeSpan timeout, CancellationToken ct,
+        IReadOnlyDictionary<string, string>? env = null)
     {
         var length = exe.Length + args.Sum(a => a.Length + 3);
         if (length > MaxCommandLineChars)
@@ -46,6 +47,10 @@ static class Proc
             StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
+        if (env is not null)
+        {
+            foreach (var (key, value) in env) psi.Environment[key] = value;
+        }
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"프로세스를 시작하지 못했습니다: {exe}");

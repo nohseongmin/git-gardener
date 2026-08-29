@@ -36,15 +36,19 @@ sealed class GhPrRef
 }
 
 /// 계정 전체에서 모아 본 열린 PR 하나.
-sealed class OpenPr(string repo, int number, string title, string url)
+sealed class OpenPr(string repo, int number, string title, string url, bool conflicting)
 {
     public string Repo { get; } = repo;
     public int Number { get; } = number;
     public string Title { get; } = title;
     public string Url { get; } = url;
 
+    /// 기본 브랜치와 충돌해 이대로는 머지되지 않는다.
+    public bool Conflicting { get; } = conflicting;
+
     /// CheckedListBox가 DisplayMember로 읽는다.
-    public string Display => $"{Repo.Split('/')[^1]} #{Number}  {Title}";
+    /// 충돌은 목록에서 바로 보여야 한다. 안 그러면 머지가 조용히 실패하고 줄만 계속 남는다.
+    public string Display => $"{Repo.Split('/')[^1]} #{Number}  {Title}{(Conflicting ? "   [충돌]" : "")}";
 }
 
 /// <summary>
@@ -158,20 +162,37 @@ sealed partial class Runner(Config cfg)
     public async Task<int> RunAsync(bool dryRun, CancellationToken ct)
     {
         var repos = await ListReposAsync(ct);
-
-        // 가장 오래 안 건드린 레포부터. 하루 처리량만큼만.
-        var quota = DailyQuota();
-        var targets = repos
-            .Where(r => cfg.EnabledRepos.Contains(r.Name))
-            .OrderBy(r => r.UpdatedAt)
-            .Take(quota)
-            .ToList();
+        var enabled = repos.Where(r => cfg.EnabledRepos.Contains(r.Name)).ToList();
 
         // 0건을 정상 종료로 처리하면 그날이 "완료"로 찍혀 다음 날까지 안 돈다.
         // 부팅 직후 목록 로드가 실패한 날이 통째로 비는 걸 막으려고 실패로 올린다.
-        if (targets.Count == 0)
+        if (enabled.Count == 0)
             throw new InvalidOperationException(
                 $"처리할 대상 레포가 없습니다. 설정에 {cfg.EnabledRepos.Count}개가 선택되어 있고 계정에서 {repos.Count}개를 읽었습니다.");
+
+        // 아직 열린 PR이 있는 레포는 건너뛴다. 그 수정이 기본 브랜치에 안 들어간 상태라
+        // 다시 돌리면 같은 자리를 또 고쳐 이슈와 PR이 겹치고, 먼저 머지된 쪽 때문에
+        // 나중 PR이 충돌로 막혀 목록에 영영 남는다.
+        var pending = (await ListOpenPullRequestsAsync(ct))
+            .Select(p => p.Repo)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var waiting = enabled.Where(r => pending.Contains(r.NameWithOwner)).Select(r => r.Name).ToList();
+        if (waiting.Count > 0)
+            Log.Write($"열린 PR이 남아 있어 {waiting.Count}개를 건너뜁니다: {string.Join(", ", waiting)}");
+
+        // 가장 오래 안 건드린 레포부터. 하루 처리량만큼만.
+        var targets = enabled
+            .Where(r => !pending.Contains(r.NameWithOwner))
+            .OrderBy(r => r.UpdatedAt)
+            .Take(DailyQuota())
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            Log.Write("고른 레포가 전부 머지를 기다리는 중입니다. 오늘은 손댈 곳이 없습니다.");
+            return 0;
+        }
 
         var rules = await LoadRulesAsync(ct);
         var created = 0;
@@ -295,35 +316,55 @@ sealed partial class Runner(Config cfg)
     /// <summary>
     /// 계정이 소유한 모든 저장소의 열린 PR을 한 번에 모은다.
     /// 검색 인덱스는 갱신이 늦어 방금 만든 PR이 빠지므로 GraphQL로 직접 훑는다.
+    /// 저장소는 한 번에 100개까지만 오므로 커서를 따라 끝까지 읽는다.
     /// </summary>
     public static async Task<IReadOnlyList<OpenPr>> ListOpenPullRequestsAsync(CancellationToken ct)
     {
-        const string query =
-            "{ viewer { repositories(first: 100, ownerAffiliations: OWNER) { nodes { nameWithOwner " +
-            "pullRequests(states: OPEN, first: 30) { nodes { number title url } } } } } }";
-
-        var result = await Proc.RunAsync("gh", ["api", "graphql", "-f", $"query={query}"],
-            Paths.Roaming, GhTimeout, ct);
-        if (!result.Ok) throw new InvalidOperationException($"PR 목록을 읽지 못했습니다: {result.Message}");
-
         var found = new List<OpenPr>();
-        using var doc = JsonDocument.Parse(result.Stdout);
-        foreach (var repo in doc.RootElement
-                     .GetProperty("data").GetProperty("viewer")
-                     .GetProperty("repositories").GetProperty("nodes").EnumerateArray())
+        string? cursor = null;
+
+        do
         {
-            var name = repo.GetProperty("nameWithOwner").GetString() ?? "";
-            foreach (var pr in repo.GetProperty("pullRequests").GetProperty("nodes").EnumerateArray())
+            var query =
+                "{ viewer { repositories(first: 100, ownerAffiliations: OWNER, after: " + Cursor(cursor) + ") { " +
+                "pageInfo { hasNextPage endCursor } nodes { nameWithOwner " +
+                "pullRequests(states: OPEN, first: 30) { nodes { number title url mergeable } } } } } }";
+
+            var result = await Proc.RunAsync("gh", ["api", "graphql", "-f", $"query={query}"],
+                Paths.Roaming, GhTimeout, ct);
+            if (!result.Ok) throw new InvalidOperationException($"PR 목록을 읽지 못했습니다: {result.Message}");
+
+            using var doc = JsonDocument.Parse(result.Stdout);
+            var repositories = doc.RootElement
+                .GetProperty("data").GetProperty("viewer").GetProperty("repositories");
+
+            foreach (var repo in repositories.GetProperty("nodes").EnumerateArray())
             {
-                found.Add(new OpenPr(
-                    name,
-                    pr.GetProperty("number").GetInt32(),
-                    pr.GetProperty("title").GetString() ?? "",
-                    pr.GetProperty("url").GetString() ?? ""));
+                var name = repo.GetProperty("nameWithOwner").GetString() ?? "";
+                foreach (var pr in repo.GetProperty("pullRequests").GetProperty("nodes").EnumerateArray())
+                {
+                    found.Add(new OpenPr(
+                        name,
+                        pr.GetProperty("number").GetInt32(),
+                        pr.GetProperty("title").GetString() ?? "",
+                        pr.GetProperty("url").GetString() ?? "",
+                        // UNKNOWN은 깃허브가 아직 계산 중인 상태다. 확정된 충돌만 표시한다.
+                        pr.GetProperty("mergeable").GetString() == "CONFLICTING"));
+                }
             }
+
+            var page = repositories.GetProperty("pageInfo");
+            cursor = page.GetProperty("hasNextPage").GetBoolean()
+                ? page.GetProperty("endCursor").GetString()
+                : null;
         }
+        while (cursor is not null);
+
         return found.OrderBy(p => p.Repo, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Number).ToList();
     }
+
+    /// GraphQL after 인자. 첫 페이지는 null 리터럴이다.
+    static string Cursor(string? cursor) => cursor is null ? "null" : $"\"{cursor}\"";
 
     /// <summary>고른 PR 하나를 머지한다. 한 커밋짜리가 대부분이라 squash가 기본 브랜치를 깨끗하게 둔다.</summary>
     public static async Task MergePullRequestAsync(OpenPr pr, CancellationToken ct)

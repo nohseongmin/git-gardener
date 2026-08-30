@@ -65,6 +65,11 @@ sealed class MainForm : Form
     readonly Button _dryRun = new() { Text = "Dry-run", AutoSize = true };
     readonly Button _stop = new() { Text = "중단", AutoSize = true, Enabled = false };
     readonly Button _openPrs = new() { Text = "열린 PR", AutoSize = true };
+    readonly TextBox _idea = new()
+    {
+        Width = 460, PlaceholderText = "한 줄 아이디어 — 비공개 저장소를 만들고 기획서와 이슈까지 올립니다",
+    };
+    readonly Button _newRepo = new() { Text = "레포 만들기", AutoSize = true };
     readonly Button _startup = new() { AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
     readonly NotifyIcon _tray = new() { Icon = Program.AppIcon, Text = AppTitle, Visible = true };
@@ -129,6 +134,13 @@ sealed class MainForm : Form
         _dryRun.Click += (_, _) => Run(dryRun: true);
         _stop.Click += (_, _) => StopRun();
         _openPrs.Click += (_, _) => OpenPullRequests();
+        _newRepo.Click += (_, _) => CreateFromIdea();
+        _idea.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.SuppressKeyPress = true;
+            CreateFromIdea();
+        };
         _startup.Click += (_, _) => ToggleStartup();
 
         var settings = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
@@ -153,13 +165,18 @@ sealed class MainForm : Form
         _split.Panel2.Controls.Add(_log);
         _split.Panel2.Controls.Add(new Label { Text = "로그", Dock = DockStyle.Top, Height = 20 });
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(8) };
+        var newRepo = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        newRepo.Controls.AddRange([Caption("새 아이디어"), _idea, _newRepo]);
+
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(8) };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(settings, 0, 0);
-        root.Controls.Add(_split, 0, 1);
-        root.Controls.Add(buttons, 0, 2);
+        root.Controls.Add(newRepo, 0, 1);
+        root.Controls.Add(_split, 0, 2);
+        root.Controls.Add(buttons, 0, 3);
         Controls.Add(root);
 
         var menu = new ContextMenuStrip();
@@ -251,6 +268,62 @@ sealed class MainForm : Form
             _runCts = null;
             SetRunning(false, "");
         }
+    }
+
+    /// <summary>
+    /// 한 줄 아이디어로 새 저장소를 만든다. 기획서를 쓰고, 비공개로 만들고, 남은 작업을 이슈로 올린다.
+    /// 만든 저장소는 대상 목록에 들어가므로 다음 일과부터 그 이슈를 처리한다.
+    /// </summary>
+    async void CreateFromIdea()
+    {
+        if (_running) return;
+
+        var idea = _idea.Text.Trim();
+        if (idea.Length == 0)
+        {
+            _status.Text = "아이디어를 한 줄 적으세요.";
+            return;
+        }
+
+        // 저장소 생성은 되돌리기가 번거롭다. 기본 버튼을 취소로 둔다.
+        var answer = MessageBox.Show(
+            $"비공개 저장소를 새로 만들고 기획서와 이슈를 올립니다.\n\n{idea}",
+            "새 저장소", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        if (answer != DialogResult.OK) return;
+
+        SetRunning(true, "기획 중");
+        using var run = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _runCts = run;
+
+        var made = false;
+        try
+        {
+            Log.Write("=== 새 저장소 시작 ===");
+            var runner = new Runner(_cfg);
+            var url = await Task.Run(() => runner.CreateFromIdeaAsync(idea, run.Token), run.Token);
+            _idea.Clear();
+            made = true;
+            Log.Write($"=== 완료 — {url} ===");
+            Balloon("새 저장소", url);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Write("=== 중단됨 ===");
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"=== 중단: {ex.Message} ===");
+            Balloon("새 저장소 실패", ex.Message);
+        }
+        finally
+        {
+            _runCts = null;
+            SetRunning(false, "");
+        }
+
+        // 목록 갱신은 실행 상태를 푼 뒤에 한다. RefreshRepos가 도는 중이면 그냥 돌아간다.
+        if (made) RefreshRepos();
     }
 
     /// <summary>도는 중인 작업을 끊는다. 진행 중인 claude 프로세스도 함께 정리된다.</summary>

@@ -357,6 +357,12 @@ sealed class MainForm : Form
             {
                 _cfg.LastRunDate = Today();
                 _cfg.Save();
+
+                // 이 값이 파일에 안 남으면 앱을 다시 켤 때마다 그날 몫이 또 돈다.
+                // 왜 안 남는지는 아직 모른다. 조용히 넘기지 말고 로그에 남긴다.
+                var saved = Config.Load().LastRunDate;
+                if (saved != _cfg.LastRunDate)
+                    Log.Write($"경고: 실행 기록이 저장되지 않았습니다(파일={saved}). 다시 켜면 오늘 몫이 또 돕니다.");
             }
             Log.Write($"=== 완료 — PR {created}건 ===");
         }

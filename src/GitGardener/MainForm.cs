@@ -55,6 +55,8 @@ sealed class MainForm : Form
         Format = DateTimePickerFormat.Custom, CustomFormat = "HH:mm", ShowUpDown = true, Width = 70,
     };
     readonly NumericUpDown _perDay = new() { Minimum = 1, Maximum = 20, Width = 55 };
+    readonly CheckBox _varyDailyLoad = new() { Text = "매일 무작위로 다르게", AutoSize = true };
+    readonly NumericUpDown _maxReposPerDay = new() { Minimum = 1, Maximum = 20, Width = 55 };
     readonly ComboBox _type = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     readonly ComboBox _model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
     readonly ComboBox _issueMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
@@ -142,11 +144,14 @@ sealed class MainForm : Form
             CreateFromIdea();
         };
         _startup.Click += (_, _) => ToggleStartup();
+        _varyDailyLoad.CheckedChanged += (_, _) => UpdateDailyLoadControls();
 
         var settings = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         settings.Controls.AddRange([
             Caption("실행 시각"), _time,
             Caption("하루 레포 수"), _perDay,
+            _varyDailyLoad,
+            Caption("최대"), _maxReposPerDay,
             Caption("개선 유형"), _type,
             Caption("모델"), _model,
             Caption("이슈"), _issueMode,
@@ -196,10 +201,20 @@ sealed class MainForm : Form
     {
         _time.Value = DateTime.Today.Add(_cfg.Schedule.ToTimeSpan());
         _perDay.Value = Math.Min(_cfg.ReposPerDay, _perDay.Maximum);
+        _varyDailyLoad.Checked = _cfg.VaryDailyLoad;
+        _maxReposPerDay.Value = Math.Min(_cfg.MaxReposPerDay, _maxReposPerDay.Maximum);
+        UpdateDailyLoadControls();
         _type.SelectedIndex = Math.Max(0, Array.FindIndex(ImprovementTypes, t => t.Key == _cfg.ImprovementType));
         _model.SelectedIndex = Math.Max(0, Array.IndexOf(Models, _cfg.Model));
         _issueMode.SelectedIndex = Math.Max(0, Array.FindIndex(IssueModes, m => m.Mode == _cfg.IssueMode));
         UpdateStartupButton();
+    }
+
+    /// 무작위 모드에서는 "하루 레포 수"가 실제로 안 쓰인다. 헷갈리지 않게 꺼서 보여준다.
+    void UpdateDailyLoadControls()
+    {
+        _perDay.Enabled = !_varyDailyLoad.Checked;
+        _maxReposPerDay.Enabled = _varyDailyLoad.Checked;
     }
 
     /// <summary>목록 전체를 켜거나 끈다. 바로 저장해서 껐다 켜도 그대로 남게 한다.</summary>
@@ -217,6 +232,8 @@ sealed class MainForm : Form
             _cfg.EnabledRepos = _repos.CheckedItems.Cast<GhRepo>().Select(r => r.Name).ToList();
         _cfg.ScheduleTime = _time.Value.ToString("HH:mm");
         _cfg.ReposPerDay = (int)_perDay.Value;
+        _cfg.VaryDailyLoad = _varyDailyLoad.Checked;
+        _cfg.MaxReposPerDay = (int)_maxReposPerDay.Value;
         _cfg.ImprovementType = ImprovementTypes[_type.SelectedIndex].Key;
         _cfg.Model = Models[_model.SelectedIndex];
         _cfg.IssueMode = IssueModes[_issueMode.SelectedIndex].Mode;

@@ -109,6 +109,10 @@ sealed class Config
     /// 이 라벨이 붙은 이슈만 고른다. 비워두면 열린 이슈 전부가 대상이다.
     public string IssueLabel { get; set; } = "";
 
+    /// 레포 선택을 한 번이라도 저장했는지. 이게 없으면 "전부 해제"로 빈 목록을 저장한 뒤
+    /// 새로고침할 때 첫 실행으로 오인되어 archived·fork를 뺀 전체가 도로 켜진다.
+    public bool ReposConfigured { get; set; }
+
     /// 코딩 규칙을 받아올 "owner/repo". 비워두면 githubUser의 coding-rules 레포.
     public string RulesRepo { get; set; } = "";
 
@@ -194,6 +198,9 @@ sealed class Config
     /// 손으로 고친 config.json이 앱을 무너뜨리지 않게, 못 쓰는 값은 알리고 기본값으로 되돌린다.
     void Validate()
     {
+        // reposConfigured 필드가 생기기 전에 저장된 설정. 이미 골라둔 레포가 있으면 첫 실행이 아니다.
+        if (EnabledRepos.Count > 0) ReposConfigured = true;
+
         if (!TimeOnly.TryParse(ScheduleTime, out _))
         {
             Log.Write($"scheduleTime '{ScheduleTime}'을 읽지 못해 {DefaultScheduleTime}으로 되돌립니다.");

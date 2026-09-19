@@ -229,7 +229,10 @@ sealed class MainForm : Form
     void SaveSettings()
     {
         if (_repos.Items.Count > 0)
+        {
             _cfg.EnabledRepos = _repos.CheckedItems.Cast<GhRepo>().Select(r => r.Name).ToList();
+            _cfg.ReposConfigured = true;
+        }
         _cfg.ScheduleTime = _time.Value.ToString("HH:mm");
         _cfg.ReposPerDay = (int)_perDay.Value;
         _cfg.VaryDailyLoad = _varyDailyLoad.Checked;
@@ -263,7 +266,7 @@ sealed class MainForm : Form
             foreach (var repo in repos.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
                 // 설정에 선택 이력이 없으면(첫 실행) archived·fork는 꺼둔 채로 시작한다.
-                var enabled = _cfg.EnabledRepos.Count > 0
+                var enabled = _cfg.ReposConfigured
                     ? _cfg.EnabledRepos.Contains(repo.Name)
                     : !repo.IsArchived && !repo.IsFork;
                 _repos.Items.Add(repo, enabled);

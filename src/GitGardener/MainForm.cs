@@ -395,6 +395,7 @@ sealed class MainForm : Form
         }
         finally
         {
+            _runCts = null;
             SetRunning(false, "");
         }
     }

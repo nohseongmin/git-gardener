@@ -55,9 +55,9 @@ static class Log
                     stamped + Environment.NewLine, FileEncoding);
             }
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 로그 파일이 잠겨도 실행 자체는 계속한다. 대신 화면에는 반드시 드러낸다.
+            // 로그 파일에 쓸 수 없어도 실행 자체는 계속한다. 대신 화면에는 반드시 드러낸다.
             stamped += $"  (로그 파일 기록 실패: {ex.Message})";
         }
         Line?.Invoke(stamped);

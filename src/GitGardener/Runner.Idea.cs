@@ -38,6 +38,7 @@ sealed partial class Runner
         // 이름은 기획을 마쳐야 정해진다. 임시 폴더에서 쓰고 나중에 옮긴다.
         var dir = Path.Combine(Paths.ReposDir, $"_new-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
+        var hasStartedRepoCreation = false;
 
         try
         {
@@ -48,6 +49,7 @@ sealed partial class Runner
             await GitAsync(dir, ["add", "-A"], ct);
             await GitAsync(dir, ["commit", "-m", $"Docs: {name} 기획 초안"], ct);
 
+            hasStartedRepoCreation = true;
             var created = await Proc.RunAsync("gh",
                 ["repo", "create", name,
                  "--private", "--source", ".", "--push", "--description", description],
@@ -65,8 +67,8 @@ sealed partial class Runner
         }
         catch
         {
-            // 저장소를 만들기 전에 엎어지면 작업 폴더만 남는다. 이름도 없는 폴더라 다시 못 쓴다.
-            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            // 원격 생성이 시작된 뒤에는 일부 단계만 성공했을 수 있으므로 복구할 작업 사본을 남긴다.
+            if (!hasStartedRepoCreation && Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             throw;
         }
     }

@@ -133,6 +133,10 @@ git clone https://github.com/nohseongmin/git-gardener && cd git-gardener
 dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
+PR에서는 같은 Windows 빌드를 실행합니다. 배포하려면 프로젝트의 `Version`을 갱신하고
+동일한 `vX.Y.Z` 태그를 푸시하세요. 빌드가 통과하면 GitHub Actions가 `GitGardener.exe`와
+`SHA256SUMS.txt`를 릴리스에 게시합니다. 실행 파일은 검증 중 자동 실행하지 않습니다.
+
 나온 실행 파일을 그냥 실행하면 같은 마법사가 뜬다. 소스에서 빌드한 파일에는 다운로드 표식이 없어 경고도 없다.
 
 </details>

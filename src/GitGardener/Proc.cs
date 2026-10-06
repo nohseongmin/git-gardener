@@ -52,6 +52,7 @@ static class Proc
             foreach (var (key, value) in env) psi.Environment[key] = value;
         }
 
+        ct.ThrowIfCancellationRequested();
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"프로세스를 시작하지 못했습니다: {exe}");
 

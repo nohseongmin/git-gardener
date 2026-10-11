@@ -359,7 +359,6 @@ sealed class MainForm : Form
     {
         if (_running) return;
         SetRunning(true, dryRun ? "Dry-run 진행 중" : "실행 중");
-        SaveSettings();
 
         var runner = new Runner(_cfg);
         runner.Notify += Balloon;
@@ -369,6 +368,7 @@ sealed class MainForm : Form
         _runCts = run;
         try
         {
+            SaveSettings();
             Log.Write(dryRun ? "=== Dry-run 시작 ===" : "=== 실행 시작 ===");
             // 스레드풀에서 돌린다. UI 스레드에서 그대로 await 하면 파이프라인의 모든 연속 실행이
             // UI 스레드로 돌아와 메시지 펌프를 막고, 윈도우가 "응답 없음"으로 판정해 앱을 닫는다.

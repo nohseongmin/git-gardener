@@ -248,12 +248,14 @@ sealed class MainForm : Form
     {
         if (_running) return;
         SetRunning(true, "레포 목록을 읽는 중");
+        using var run = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _runCts = run;
         try
         {
             var runner = new Runner(_cfg);
             try
             {
-                Log.Write($"claude {await runner.ClaudeVersionAsync(_cts.Token)}");
+                Log.Write($"claude {await runner.ClaudeVersionAsync(run.Token)}");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -261,7 +263,7 @@ sealed class MainForm : Form
                 Log.Write($"claude를 쓸 수 없습니다. 이대로면 예약 실행이 실패합니다: {ex.Message}");
             }
 
-            var repos = await runner.ListReposAsync(_cts.Token);
+            var repos = await runner.ListReposAsync(run.Token);
             _repos.Items.Clear();
             foreach (var repo in repos.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -277,7 +279,7 @@ sealed class MainForm : Form
         }
         catch (OperationCanceledException)
         {
-            // 종료 중이다. 남길 것이 없다.
+            // 사용자 중단 또는 앱 종료다. 목록을 덮어쓰지 않는다.
         }
         catch (Exception ex)
         {

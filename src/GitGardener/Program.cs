@@ -53,6 +53,9 @@ static class Program
             // 설치한 자리의 실행 파일로 넘긴다. 지금 도는 것은 받아둔 원본일 수 있다.
             if (setup.InstalledExe is { } exe && !string.Equals(exe, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
             {
+                // 새 프로세스가 중복 실행으로 종료되지 않게 단일 실행 잠금을 먼저 정리한다.
+                single.ReleaseMutex();
+                single.Dispose();
                 Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
                 return;
             }

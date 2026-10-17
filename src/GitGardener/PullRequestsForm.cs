@@ -106,6 +106,7 @@ sealed class PullRequestsForm : Form
             MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.OK) return;
 
+        var ct = _cts.Token;
         SetBusy(true, "머지 중");
         var merged = 0;
         var failed = 0;
@@ -113,14 +114,15 @@ sealed class PullRequestsForm : Form
         {
             try
             {
-                await Task.Run(() => Runner.MergePullRequestAsync(pr, _cts.Token), _cts.Token);
+                await Task.Run(() => Runner.MergePullRequestAsync(pr, ct), ct);
+                ct.ThrowIfCancellationRequested();
                 merged++;
                 Log.Write($"머지: {pr.Repo}#{pr.Number}");
                 _status.Text = $"머지 {merged}건 / {picked.Count}건";
             }
             catch (OperationCanceledException)
             {
-                break;
+                return;
             }
             catch (Exception ex)
             {
@@ -130,7 +132,14 @@ sealed class PullRequestsForm : Form
             }
 
             // 연달아 때리면 API가 거절한다.
-            await Task.Delay(MergeGapMs, _cts.Token);
+            try
+            {
+                await Task.Delay(MergeGapMs, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
 
         SetBusy(false, failed == 0 ? $"머지 {merged}건 완료" : $"머지 {merged}건, 실패 {failed}건 (로그 확인)");

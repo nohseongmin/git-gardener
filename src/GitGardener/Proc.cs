@@ -67,6 +67,8 @@ static class Proc
         try
         {
             await proc.WaitForExitAsync(deadline.Token);
+            // 자식이 출력 파이프를 물려받으면 부모가 끝나도 읽기는 계속될 수 있다.
+            await Task.WhenAll(stdout, stderr).WaitAsync(deadline.Token);
         }
         catch (OperationCanceledException)
         {

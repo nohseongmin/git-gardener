@@ -174,7 +174,7 @@ sealed class Config
             cfg = read;
             return true;
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return false;
         }

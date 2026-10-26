@@ -16,9 +16,20 @@ Visual Studio는 **필요 없다.** UI를 코드로 구성하므로 `dotnet` CLI
 
 ### claude CLI 로그인
 
-`claude --version`이 떠도 그것만으로는 부족하다. **CLI 자체가 로그인되어 있어야** 헤드리스 세션이 돈다. 확인:
+`claude --version`이 떠도 그것만으로는 부족하다. **CLI 자체가 로그인되어 있어야** 헤드리스 세션이 돈다.
 
-```bash
+기본 설정(`separateClaudeConfig: true`)에서 앱은 `%LOCALAPPDATA%\GitGardener\claude`를 전용 설정 폴더로 쓴다. 일반 대화형 세션의 `~/.claude`에 로그인한 것만으로는 자동 세션에 적용되지 않는다.
+
+설치 마법사의 `claude 로그인 창 열기`를 누르고 열린 창에서 `/login`을 마친다. 직접 하려면 새 PowerShell 창에서 다음을 실행한다:
+
+```powershell
+$env:CLAUDE_CONFIG_DIR = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'GitGardener\claude'
+claude
+```
+
+`/login`을 마치고 Claude를 종료한 뒤, 환경변수가 유지되는 같은 PowerShell 창에서 확인한다:
+
+```powershell
 claude -p "reply with OK only" --output-format json
 ```
 
@@ -28,7 +39,7 @@ claude -p "reply with OK only" --output-format json
 Your account does not have access to Claude Code. Please run /login.
 ```
 
-대화형으로 `claude`를 띄워 `/login`을 마치면 풀린다. 로그인 전에는 앱이 돌아도 claude 단계에서 매번 실패하고, 로그에 위 문장이 그대로 찍힌다.
+전용 폴더에 로그인하기 전에는 앱이 돌아도 claude 단계에서 매번 실패한다. `separateClaudeConfig`를 `false`로 바꿔 일반 세션과 설정을 공유하는 경우에는 위 환경변수 지정을 생략하고 일반 세션의 로그인을 확인한다.
 
 ### claude 설치 형태가 바뀐다
 

@@ -321,6 +321,7 @@ sealed class MainForm : Form
         var made = false;
         try
         {
+            SaveSettings();
             Log.Write("=== 새 저장소 시작 ===");
             var runner = new Runner(_cfg);
             var url = await Task.Run(() => runner.CreateFromIdeaAsync(idea, run.Token), run.Token);

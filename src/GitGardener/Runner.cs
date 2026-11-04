@@ -382,7 +382,7 @@ sealed partial class Runner(Config cfg)
     async Task<GhIssue?> FindIssueAsync(GhRepo repo, CancellationToken ct)
     {
         List<string> args = ["issue", "list", "--repo", repo.NameWithOwner,
-            "--state", "open", "--json", "number,title,body"];
+            "--state", "open", "--search", "sort:created-asc", "--json", "number,title,body"];
         if (cfg.IssueLabel.Length > 0) args.AddRange(["--label", cfg.IssueLabel]);
 
         var listed = await Proc.RunAsync("gh", args, Paths.Roaming, GhTimeout, ct);

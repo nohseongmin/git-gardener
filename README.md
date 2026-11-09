@@ -81,6 +81,16 @@ Automated sessions have no shell, so they cannot compile or run tests. A pull re
 
 A small set of active repositories may run out of useful maintenance work.
 
+## Testing
+
+With the .NET 9 SDK installed, run the existing regression checks from the repository root:
+
+```powershell
+.\test.ps1
+```
+
+The script runs `tests/GitGardener.Regression` and returns its exit code. The checks verify that invalid branch names (`fix/foo..bar`, `fix/foo.lock`) fall back to a safe name while valid names are preserved. A failed check exits with a nonzero code.
+
 ## Building
 
 ```bash
@@ -94,7 +104,7 @@ dotnet publish src/GitGardener -c Release -r win-x64 --self-contained -p:Publish
 
 The app uses C#, .NET 9, and WinForms, without NuGet packages. It still depends on Git, GitHub CLI, and Claude Code, including their authentication.
 
-Pull requests run the Windows build. To release, update the project version and push its matching `vX.Y.Z` tag. GitHub Actions publishes `GitGardener.exe` and `SHA256SUMS.txt` after a successful build. Verification does not launch the executable automatically.
+Pull requests run the regression checks and the Windows build. To release, update the project version and push its matching `vX.Y.Z` tag. GitHub Actions publishes `GitGardener.exe` and `SHA256SUMS.txt` after a successful build. Verification does not launch the application executable automatically.
 
 See [the plan](docs/PLAN.md) and [setup notes](docs/SETUP.md) for more detail.
 

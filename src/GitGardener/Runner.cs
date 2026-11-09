@@ -121,7 +121,8 @@ sealed partial class Runner(Config cfg)
     private static partial Regex TitleFormat { get; }
 
     /// 브랜치 형식. 예: "fix/input-focus-auto-zoom"
-    [GeneratedRegex(@"^[a-z]+/[a-z0-9]([a-z0-9._-]*[a-z0-9])?$")]
+    /// 연속 점(..)과 .lock 접미사는 Git이 브랜치 이름으로 받지 않는다.
+    [GeneratedRegex(@"^[a-z]+/(?!.*\.\.)(?!.*\.lock$)[a-z0-9]([a-z0-9._-]*[a-z0-9])?$")]
     private static partial Regex BranchFormat { get; }
 
     /// 템플릿에 있는 빈 이슈 참조 줄. 예: "> - #"

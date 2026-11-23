@@ -83,13 +83,13 @@ A small set of active repositories may run out of useful maintenance work.
 
 ## Testing
 
-With the .NET 9 SDK installed, run the existing regression checks from the repository root:
+With the .NET 9 SDK installed on Windows, run the existing regression checks from the repository root:
 
 ```powershell
 .\test.ps1
 ```
 
-The script runs `tests/GitGardener.Regression` and returns its exit code. The checks verify that invalid branch names (`fix/foo..bar`, `fix/foo.lock`) fall back to a safe name while valid names are preserved. A failed check exits with a nonzero code.
+The script runs `tests/GitGardener.Regression` and `tests/GitGardener.PullRequests.Regression` and returns a nonzero code if either fails. The checks verify that invalid branch names (`fix/foo..bar`, `fix/foo.lock`) fall back to a safe name while valid names are preserved. The pull request checks use the actual form with simulated approval and GitHub responses to verify that one successful merge and one failed merge remain visible after list refreshes, including a failed refresh. They do not access GitHub.
 
 ## Building
 

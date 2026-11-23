@@ -24,6 +24,7 @@ sealed class PullRequestsForm : Form
     readonly Button _merge = new() { Text = "선택 머지", AutoSize = true };
     readonly Button _open = new() { Text = "브라우저에서 열기", AutoSize = true };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(10, 6, 0, 0) };
+    readonly Label _mergeResult = new() { AutoSize = true };
 
     bool _busy;
 
@@ -43,15 +44,17 @@ sealed class PullRequestsForm : Form
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         buttons.Controls.AddRange([_refresh, _merge, _open, _status]);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(8) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(8) };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(
             new Label { Text = "머지할 PR을 체크하세요. 두 번 누르면 브라우저에서 열립니다.", Dock = DockStyle.Fill, AutoSize = true },
             0, 0);
         root.Controls.Add(_list, 0, 1);
         root.Controls.Add(buttons, 0, 2);
+        root.Controls.Add(_mergeResult, 0, 3);
         Controls.Add(root);
     }
 
@@ -107,6 +110,7 @@ sealed class PullRequestsForm : Form
         if (answer != DialogResult.OK) return;
 
         var ct = _cts.Token;
+        _mergeResult.Text = "";
         SetBusy(true, "머지 중");
         var merged = 0;
         var failed = 0;
@@ -142,7 +146,8 @@ sealed class PullRequestsForm : Form
             }
         }
 
-        SetBusy(false, failed == 0 ? $"머지 {merged}건 완료" : $"머지 {merged}건, 실패 {failed}건 (로그 확인)");
+        _mergeResult.Text = failed == 0 ? $"머지 {merged}건 완료" : $"머지 {merged}건, 실패 {failed}건 (로그 확인)";
+        SetBusy(false, "");
         Load();
     }
 
